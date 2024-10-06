@@ -9,6 +9,7 @@
 #include <vector>
 #include <sstream>
 #include <tapa.h>
+#include "spmv.h"
 
 template <typename T>
 using aligned_vector = std::vector<T, tapa::aligned_allocator<T>>;
@@ -38,39 +39,24 @@ std::vector<std::vector<CSRMatrix>> tileCSRMatrix(const CSRMatrix& originalMatri
     int numTilesRows, int numTilesCols);
 
 std::vector<aligned_vector<uint64_t>> prepareAmtx(std::vector<std::vector<CSRMatrix>> tiledMatrices, const int numTilesRows, const int numTilesCols, 
-    const int Depth, const int Window, const int rows, const int cols, const int nnz, const int USE_ROW_SHARE, const int USE_TREE_ADDER, bool &USE_DOUBLE_BUFFER);
+    const int Depth, const int Window, const int rows, const int cols, const int nnz);
 
 
-inline uint64_t encode(bool tileEnd, bool rowEnd, bool sharedRow, uint16_t row, int col, uint32_t val)
+inline uint64_t encode(bool tileEnd, bool rowEnd, bool sharedRow, uint16_t row, uint16_t col, uint32_t val)
 {
-    uint64_t res = 0; // 16bits
-    res |= row;
+    uint64_t res = 0;
+    res |= rowEnd; 
+    res <<= 15;
+    res |= row & (0x7FFF);
     res <<= 1;
     res |= tileEnd; //will be 47th bit
     res <<= 1;
-    res |= rowEnd; // will be 46th bit
-    res <<= 1;
-    res |= sharedRow; // will be 45th nit
-    res <<= 13;
-    res |= col & (0x1FFF); // 13 bits col
+    res |= sharedRow; // will be 46th nit
+    res <<= 14;
+    res |= col & (0x3FFF); // 14 bits col
     res <<= 32;
     res |= val; //32 bits val
     return res;
-}
-
-inline void decode(uint64_t a, bool& tileEnd, bool& rowEnd, bool& sharedRow, uint16_t& row16, uint16_t& col, float& val) {
-    uint32_t cval = a & 0xFFFFFFFF;
-    a >>= 32;
-    col = a & 0x1FFF;
-    a >>= 13;
-    sharedRow = a & 1;
-    a >>= 1;
-    rowEnd = a & 1;
-    a >>= 1;
-    tileEnd = a & 1;
-    a >>= 1;
-    row16 = a & 0xFFFF;
-    val = *(float*)&cval;
 }
 
 #endif

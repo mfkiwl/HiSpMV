@@ -1,5 +1,7 @@
 # Exclude anything inside the "matrices" directory
 matrices/*
+builds
+builds/** 
 
 # Exclude binary file named "spmv" in any folder
 **/spmv

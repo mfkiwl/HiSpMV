@@ -5,13 +5,18 @@ import math
 from crossbar import CrossBarGen
 
 class SpMVCodeGen:
-    def __init__(self, num_pes, num_c_ch,  with_ta, with_hb,  build_dir, parent_dir):
-        self.num_pes = num_pes
-        self.num_c_ch = num_c_ch
-        self.with_ta = with_ta
-        self.with_hb = with_hb
-        self.num_ch = num_pes // 8
-        self.log2_num_pes = int(math.ceil(math.log2(num_pes)))
+    def __init__(self, num_ch_A, num_ch_B, num_ch_C, ch_width, build_dir, parent_dir):
+        self.num_ch_A = num_ch_A
+        self.num_ch_B = num_ch_B
+        self.num_ch_C = num_ch_C
+        self.ch_width = ch_width
+        self.pes_per_ch = ch_width // 64
+        self.num_pes = num_ch_A * self.pes_per_ch
+        self.b_part = ch_width // 32 // 2 #BRAM36K 2Ports
+        self.b_window = min(self.b_part * 1024, 1 << 14)
+        self.w_window = self.b_window // self.b_part // 2
+        self.load_group_size = self.pes_per_ch // 2
+        self.log2_num_pes = int(math.ceil(math.log2(self.num_pes)))
         self.build_dir = build_dir
         self.parent_dir = parent_dir
         self.temp_dir = os.path.join(parent_dir, "temp")
@@ -34,18 +39,17 @@ class SpMVCodeGen:
 
         lines = ["[connectivity]\n"]
         lines.append("\n")
-        lines.append("sp=SpMV.b:HBM[0]\n")
-        for i in range(self.num_ch):
-            if (i < self.num_ch//2):
-                lines.append(f"sp=SpMV.A_{i}:HBM[{i+1}]\n")
-            
-            else:
-                lines.append(f"sp=SpMV.A_{i}:HBM[{(i-self.num_ch//2)+17}]\n")
+        for i in range(self.num_ch_B):
+            lines.append(f"sp=SpMV.b_{i}:HBM[{i}]\n")
 
-        for i in range(self.num_c_ch):
-            lines.append(f"sp=SpMV.c_in_{i}:HBM[{32-(2*self.num_c_ch)+(2*i)}]\n")
-        for i in range(self.num_c_ch):
-            lines.append(f"sp=SpMV.c_out_{i}:HBM[{32-(2*self.num_c_ch)+(2*i)+1}]\n")
+        for i in range(self.num_ch_A):
+            lines.append(f"sp=SpMV.A_{i}:HBM[{i+self.num_ch_B}]\n")
+
+        for i in range(self.num_ch_C):
+            lines.append(f"sp=SpMV.c_in_{i}:HBM[{i+self.num_ch_A+self.num_ch_B}]\n")
+        
+        for i in range(self.num_ch_C):
+            lines.append(f"sp=SpMV.c_out_{i}:HBM[{i+self.num_ch_A+self.num_ch_B+self.num_ch_C}]\n")
 
         with open(link_file, 'w') as file:
             for line in lines:
@@ -87,16 +91,15 @@ class SpMVCodeGen:
         with open(header_file_wr, 'w') as file:
             for line in lines:
                 if line.startswith("#define II_DIST"):
-                    file.write(f"#define NUM_CH {self.num_ch}\n")
-                    file.write(f"#define NUM_C_CH {self.num_c_ch}\n")
-                    file.write(f"#define LOG_2_NUM_PES {self.log2_num_pes}\n")
+                    file.write(f"#define PES_PER_CH {self.pes_per_ch}\n")
                     file.write(f"#define NUM_PES {self.num_pes}\n")
                     file.write(f"#define NUM_PES_HALF {self.num_pes//2}\n")
-                    if self.with_ta == 1:
-                        file.write("#define BUILD_TREE_ADDER\n")
-                    if self.with_hb == 1:
-                        file.write("#define HYBRID_DESIGN\n")
-                    file.write("\n")
+                    file.write(f"#define LOG_2_NUM_PES {self.log2_num_pes}\n\n")
+
+                    file.write(f"#define B_PART {self.b_part}\n")
+                    file.write(f"#define B_WINDOW {self.b_window}\n")
+                    file.write(f"#define W_WINDOW {self.w_window}\n")
+                    file.write(f"#define LOAD_GROUP_SIZE {self.load_group_size}\n\n")
                 file.write(line)
 
     def writeKernelCode(self):
@@ -108,18 +111,16 @@ class SpMVCodeGen:
         spmv_wr_file = os.path.join(src_dir, "spmv.cpp")
 
         with open(base_functions_file, 'r') as file:
-            lines = file.readlines()
+            base_functions_lines = file.readlines()
         
         with open(top_function_file, 'r') as file:
             top_func_lines = file.readlines()
 
         with open(spmv_wr_file, 'w') as file:
-            for line in lines:
+            for line in base_functions_lines:
                 file.write(line)
-
-        swb_lines = self.generateSWB()
-        # ta_lines = self.generateTA()
-        # ta_invoke_lines = self.generateTAinvokes()
+            file.write("\n")
+        # swb_lines = self.generateSWB()
         
         myCB = CrossBarGen(self.num_pes)
         myCB.buildGraph(False)
@@ -128,32 +129,22 @@ class SpMVCodeGen:
         cb_invoke_lines = self.generateCBinvokes(myCB.graph_dict)
 
         with open(spmv_wr_file, 'a') as file:
-            for line in swb_lines:
-                file.write(line)
-            
-            # for line in ta_lines:
+            # for line in swb_lines:
             #     file.write(line)
 
             for line in top_func_lines:
                 if line.find("tapa::task()") != -1:
+                    file.write("#ifdef BUILD_ROW_DIST_NETWORK")
                     for l in cb_streams_lines:
                         file.write(l)
+                    file.write("#endif\n")
                     file.write("\n")
                 
-                if line.find("ResultBuff") != -1:
-                    # for l in ta_invoke_lines:
-                    #     file.write(l)
-
+                if line.find("#else") != -1:
                     for l in cb_invoke_lines:
                         file.write(l)
 
                 file.write(line)
-            
-    def generateTAinvokes(self):
-        lines = []
-        for i in range(0, self.num_pes, 2):
-            lines.append(f"\t\t.invoke<tapa::join>(TreeAdder_{i}, FIFO_C_ROW, FIFO_C_VAL, FIFO_C_FLAG, FIFO_C_SHF)" + "\n")
-        return lines
     
     def generateCBstreams(self, dict):
         lines = ["\n"]

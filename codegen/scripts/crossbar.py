@@ -95,7 +95,7 @@ class CrossBarGen:
                             self.addBlock("SSW", i, i+adjust_off, "green", False, False, level - 2)
                     
                 if d == self.depth:
-                    self.addBlock("ADD_X", i-1, i, "red", first, last, level - 1)
+                    self.addBlock("ADD_SWB", i-1, i, "red", first, last, level - 1)
                     
                 elif ((i >> d) & 1) == 0:
                     self.addBlock("ADD_1", i-1, i, "yellow", first, False, level - 1)

@@ -1,5 +1,4 @@
 #include "helper_functions.h"
-#include "spmv.h"
 #include "mmio.h"
 
 std::vector<std::vector<std::vector<int>>> balanceWorkload(std::vector<std::vector<CSRMatrix>> tiledMatrices, 
@@ -100,16 +99,23 @@ std::vector<std::vector<std::vector<int>>> balanceWorkload(std::vector<std::vect
 
             std::sort(removedRows.begin(), removedRows.end());
             
-            for (int k = 0; k < removedRows.size(); k++ )
+            std::sort(removedRows.begin(), removedRows.end());
+#ifdef DEBUGGING
+            std::cout << "Tile " << i << ", " << j << std::endl;
+#endif
+            for (int k = 0; k < removedRows.size(); k++ ) {
+#ifdef DEBUGGING
+                std::cout << "\t Row: " << removedRows[k] << std::endl;
+#endif
                 sharedRows[i][j][k] = removedRows[k];
+            }
             numSharedRows[i][j] = removedRows.size();
             
             int load_size = maxVal + extraCycles + PADDING;
 
-            #ifdef DEBUGGING
+#ifdef DEBUGGING
                 printf("Max PE Load: %d\t Extra Cycles: %d\t Estimated Load Size: %d\n", maxVal, extraCycles, load_size);
-                // std::cout << "Max PE Load:" << maxVal << "\t Extra Cycles: " << extraCycles << "\t Estimated Load Size: " << load_size << std::endl;
-            #endif
+#endif
             maxPEload1_p[i][j] = load_size;
             maxPEload1 += maxPEload1_p[i][j]; 
         }
@@ -294,7 +300,7 @@ std::vector<aligned_vector<uint64_t>> prepareAmtx1(std::vector<std::vector<CSRMa
     }
   }
 
-  std::vector<aligned_vector<uint64_t>> fpgaAmtx(NUM_CH, aligned_vector<uint64_t>(PES_PER_CH * totalSize));
+  std::vector<aligned_vector<uint64_t>> fpgaAmtx(NUM_A_CH, aligned_vector<uint64_t>(PES_PER_CH * totalSize));
 
   #pragma omp parallel for num_threads(48) collapse(2)
   for(int i = 0; i < numTilesRows; i++) {
@@ -382,7 +388,7 @@ std::vector<aligned_vector<uint64_t>> prepareAmtx2(std::vector<std::vector<CSRMa
         }
     }
 
-    std::vector<aligned_vector<uint64_t>> fpgaAmtx(NUM_CH, aligned_vector<uint64_t>(totalSize * PES_PER_CH));
+    std::vector<aligned_vector<uint64_t>> fpgaAmtx(NUM_A_CH, aligned_vector<uint64_t>(totalSize * PES_PER_CH));
     #pragma omp parallel for collapse(2)
     for (int i = 0; i < numTilesRows; i++) {
         for (int j = 0; j < numTilesCols; j++) {
@@ -523,7 +529,7 @@ std::vector<aligned_vector<uint64_t>> prepareAmtx3(std::vector<std::vector<CSRMa
         }
     }
 
-    std::vector<aligned_vector<uint64_t>> aMtx(NUM_CH, aligned_vector<uint64_t>((len) * PES_PER_CH));
+    std::vector<aligned_vector<uint64_t>> aMtx(NUM_A_CH, aligned_vector<uint64_t>((len) * PES_PER_CH));
 
     #pragma omp parallel for collapse(2)
     for (int i = 0; i < numTilesRows; i++) {
@@ -656,7 +662,7 @@ std::vector<aligned_vector<uint64_t>> prepareAmtx3(std::vector<std::vector<CSRMa
 }
 
 std::vector<aligned_vector<uint64_t>> prepareAmtx(std::vector<std::vector<CSRMatrix>> tiledMatrices, const int numTilesRows, const int numTilesCols, 
-    const int Depth, const int Window, const int rows, const int cols, const int nnz, const int USE_ROW_SHARE, const int USE_TREE_ADDER, bool &USE_DOUBLE_BUFFER) 
+    const int Depth, const int Window, const int rows, const int cols, const int nnz) 
 {    
     //compute how balanced the matrix is
     float imb0, imb1;
@@ -671,16 +677,15 @@ std::vector<aligned_vector<uint64_t>> prepareAmtx(std::vector<std::vector<CSRMat
     int run_len1 = 0;
     std::vector<std::vector<int>> tileSizes1 = computePEloads1(tiledMatrices, numTilesRows, numTilesCols, run_len1);
     printf("Run Length without Row Sharing, and without Tree Adders: %d\n", run_len1);
+
+#ifndef BUILD_ROW_DIST_NETWORK
+    std::cout << "Hardware doesn't have Row Distribution Network, continuing without Row Sharing, and without Tree Adders" << std::endl;
+    return prepareAmtx1(tiledMatrices, numTilesRows, numTilesCols, tileSizes1);
+#endif
     printf("Improvement = %d (%f, %f)\n", improvement, imb0, imb1);
 
     if (improvement < 10) {
-        std::cout << "Input Matrix is Balanced, continuing without row sharing and tree adders " << std::endl;
-        USE_DOUBLE_BUFFER = false;
-        return prepareAmtx1(tiledMatrices, numTilesRows, numTilesCols, tileSizes1);
-    }
-
-    else if (!USE_ROW_SHARE) {
-        std::cout << "Row sharing disabled by user, continuing without row sharing and tree adders " << std::endl;
+        std::cout << "Input Matrix is Balanced, continuing without Row Sharing, and without Tree Adders " << std::endl;
         return prepareAmtx1(tiledMatrices, numTilesRows, numTilesCols, tileSizes1);
     }
     
@@ -691,19 +696,11 @@ std::vector<aligned_vector<uint64_t>> prepareAmtx(std::vector<std::vector<CSRMat
     std::vector<std::vector<int>> tileSizes2 = computePEloads2(tiledMatrices, numTilesRows, numTilesCols, numSharedRows, sharedRows, run_len2);
     printf("Run Length with Row Sharing, and without Tree Adders: %d\n", run_len2);
 
-    #ifndef BUILD_TREE_ADDER
+    #ifndef BUILD_PRE_ACCUMULATOR
         //if hardware doesnt have tree adder 
         std::cout << "Hardware doesn't have Tree Adder, continuing without Tree Adders" << std::endl;
         return prepareAmtx2(tiledMatrices, numTilesRows, numTilesCols, numSharedRows, sharedRows, tileSizes2);
-    #endif
-
-    #ifdef BUILD_TREE_ADDER
-        //if user disabled tree adders
-        if (!USE_TREE_ADDER) {
-            std::cout << "Tree Adder disabled by user, continuing without Tree Adders" << std::endl;
-            return prepareAmtx2(tiledMatrices, numTilesRows, numTilesCols, numSharedRows, sharedRows, tileSizes2);
-        }
-
+    #else
         //using both
         printf("Run Length with Row Sharing, and with Tree Adders: %d\n", run_len3);
         return prepareAmtx3(tiledMatrices, numTilesRows, numTilesCols, numSharedRows, sharedRows, tileSizes3);
