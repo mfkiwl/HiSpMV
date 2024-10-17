@@ -1,18 +1,15 @@
 import os
 import shutil
 import math
-
+from commons import SpMVConfig
 from crossbar import CrossBarGen
 
 class SpMVCodeGen:
-    def __init__(self, num_ch_A, num_ch_B, num_ch_C, ch_width, build_dir, parent_dir):
-        self.num_ch_A = num_ch_A
-        self.num_ch_B = num_ch_B
-        self.num_ch_C = num_ch_C
-        self.ch_width = ch_width
-        self.pes_per_ch = ch_width // 64
-        self.num_pes = num_ch_A * self.pes_per_ch
-        self.b_part = ch_width // 32 // 2 #BRAM36K 2Ports
+    def __init__(self, spmvConfig, build_dir, parent_dir):
+        self.config = spmvConfig
+        self.pes_per_ch = self.config.ch_width // 64
+        self.num_pes = self.config.num_ch_A * self.pes_per_ch
+        self.b_part = (self.config.num_ch_B * self.config.ch_width) // 32 // 2 #BRAM36K 2Ports
         self.b_window = min(self.b_part * 1024, 1 << 14)
         self.w_window = self.b_window // self.b_part // 2
         self.load_group_size = self.pes_per_ch // 2
@@ -25,6 +22,7 @@ class SpMVCodeGen:
     def generateAll(self):
         self.copyHostCode()
         self.copyMakefile()
+        self.writeHwDefsHeader()
         self.writeKernelHeader()
         self.writeKernelCode()
         self.writeLinkConfig()
@@ -39,17 +37,17 @@ class SpMVCodeGen:
 
         lines = ["[connectivity]\n"]
         lines.append("\n")
-        for i in range(self.num_ch_B):
+        for i in range(self.config.num_ch_B):
             lines.append(f"sp=SpMV.b_{i}:HBM[{i}]\n")
 
-        for i in range(self.num_ch_A):
-            lines.append(f"sp=SpMV.A_{i}:HBM[{i+self.num_ch_B}]\n")
+        for i in range(self.config.num_ch_A):
+            lines.append(f"sp=SpMV.A_{i}:HBM[{i+self.config.num_ch_B}]\n")
 
-        for i in range(self.num_ch_C):
-            lines.append(f"sp=SpMV.c_in_{i}:HBM[{i+self.num_ch_A+self.num_ch_B}]\n")
+        for i in range(self.config.num_ch_C):
+            lines.append(f"sp=SpMV.c_in_{i}:HBM[{i+self.config.num_ch_A+self.config.num_ch_B}]\n")
         
-        for i in range(self.num_ch_C):
-            lines.append(f"sp=SpMV.c_out_{i}:HBM[{i+self.num_ch_A+self.num_ch_B+self.num_ch_C}]\n")
+        for i in range(self.config.num_ch_C):
+            lines.append(f"sp=SpMV.c_out_{i}:HBM[{i+self.config.num_ch_A+self.config.num_ch_B+self.config.num_ch_C}]\n")
 
         with open(link_file, 'w') as file:
             for line in lines:
@@ -77,6 +75,24 @@ class SpMVCodeGen:
         cp_dst_file = os.path.join(self.temp_dir, "Makefile")
         # print(cp_dst_file)
         shutil.copy(cp_src_file, cp_dst_file)
+
+    def writeHwDefsHeader(self):
+        src_dir = os.path.join(self.temp_dir, "src")
+        header_file_wr = os.path.join(src_dir, "hw_defs.h")
+
+        with open(header_file_wr, 'w') as file:
+            file.write(f"#define NUM_A_CH {self.config.num_ch_A}\n")
+            file.write(f"#define NUM_B_CH {self.config.num_ch_B}\n")
+            file.write(f"#define NUM_C_CH {self.config.num_ch_C}\n")
+            file.write(f"#define CH_WIDTH {self.config.ch_width}\n")
+            file.write(f"#define URAMS_PER_PE {self.config.urams_per_pe}\n")
+            if self.config.dense_overlay:
+                file.write("#define BUILD_DENSE_OVERLAY\n")
+            if self.config.pre_accumulator:
+                file.write("#define BUILD_PRE_ACCUMULATOR\n")
+            if self.config.row_dist_net:
+                file.write("#define BUILD_ROW_DIST_NETWORK\n")
+
 
     def writeKernelHeader(self):
         src_dir = os.path.join(self.temp_dir, "src")

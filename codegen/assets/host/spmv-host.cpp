@@ -137,8 +137,8 @@ double computePrecisionLoss(const vector<float>& vectorA, const vector<aligned_v
   int maxRelativeErrorIdx = 0;
 
   for (size_t i = 0; i < vectorA.size(); ++i) {
-    int ch = (i / 16) % NUM_C_CH;
-    int addr = (i / (16* NUM_C_CH)) * 16 + (i % 16);
+    int ch = (i / FP32_PER_CH) % NUM_C_CH;
+    int addr = (i / (FP32_PER_CH * NUM_C_CH)) * FP32_PER_CH + (i % FP32_PER_CH);
     double diff = fabs(vectorA[i] - vectorB[ch][addr]);
     double ref = min(fabs(vectorA[i]), (float)fabs(vectorB[ch][addr]));
     double relativeError = 0.0;
@@ -152,13 +152,13 @@ double computePrecisionLoss(const vector<float>& vectorA, const vector<aligned_v
     }
 
     if (relativeError > 0.01)
-      clog << "Relative Error: " << relativeError <<  " CPU: " << vectorA[i] << " FPGA: " << vectorB[(i / 16) % NUM_C_CH][(i/ (16* NUM_C_CH)) * 16 + (i % 16)] << "\t i: " << i << endl;
+      clog << "Relative Error: " << relativeError <<  " CPU: " << vectorA[i] << " FPGA: " << vectorB[(i / FP32_PER_CH) % NUM_C_CH][(i/ (FP32_PER_CH* NUM_C_CH)) * FP32_PER_CH + (i % FP32_PER_CH)] << "\t i: " << i << endl;
 
     diffSum += diff;
     refSum += ref;   
   }
 
-  clog << "Max Relative Error: " << maxRelativeError <<  " CPU: " << vectorA[maxRelativeErrorIdx] << " FPGA: " << vectorB[(maxRelativeErrorIdx / 16) % NUM_C_CH][(maxRelativeErrorIdx/ (16* NUM_C_CH)) * 16 + (maxRelativeErrorIdx % 16)] << "\t i: " << maxRelativeErrorIdx << endl;
+  clog << "Max Relative Error: " << maxRelativeError <<  " CPU: " << vectorA[maxRelativeErrorIdx] << " FPGA: " << vectorB[(maxRelativeErrorIdx / FP32_PER_CH) % NUM_C_CH][(maxRelativeErrorIdx/ (FP32_PER_CH * NUM_C_CH)) * FP32_PER_CH + (maxRelativeErrorIdx % FP32_PER_CH)] << "\t i: " << maxRelativeErrorIdx << endl;
 
   return diffSum/refSum;
 }

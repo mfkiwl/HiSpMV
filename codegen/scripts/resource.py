@@ -1,210 +1,156 @@
-import json
-from dataclasses import dataclass
-from crossbar import CrossBarGen
+import math
+from commons import SpMVConfig, FPGAResource
 
-@dataclass
-class Resource:
-    bram: int
-    uram: int
-    dsp: int
-    luts: int
-    reg: int
+class ResourceEstimator:
+    @staticmethod
+    def getEstimateFromConfig(config, fpga):
+        myResource = fpga.fixed
 
-fixed = {"bram": 0.10, "dsp": 0.0, "ff": 0.05, "lut": 0.15, "uram": 0.0, "hbm": 0.0}
-thresh = {"bram": 0.75, "dsp": 0.50, "ff": 0.50, "lut": 0.5, "uram": 0.4, "hbm": 0.9}
+        NUM_PES = config.num_ch_A * config.ch_width // 64
+        FIFO_DEPTH = 2
+        
+        #Resource of tapa::tasks
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.MM2S_A(), config.num_ch_A)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.MM2S_B(), config.num_ch_B)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.MM2S_C(), config.num_ch_C)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.S2MM_C(), config.num_ch_C)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.LoadB(), config.num_ch_A)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.ComputeAB(config), NUM_PES//2)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.PreAccumulator(config), NUM_PES//2)
+        
+        if config.row_dist_net:
+            myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.ADD_Blocks(), NUM_PES)  
+            myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.SW_Blocks(), 2*(NUM_PES - 3))
+        
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.AccumBuffer(config), NUM_PES)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.Arbitter_C(), 1)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.Compute_C(config), config.num_ch_C)
 
-def print_resource(config_file, with_ta, with_hb, num_ch, num_c_ch):
-    myEst = ResourceEstimate()
-    if config_file is not None:
-        available = load_config_file(config_file)
-        print(f"\nResource Estimation [{num_ch} Channels]")
-        utilised = myEst.Total(num_ch, with_ta, with_hb, num_c_ch)
-        for key, value in utilised.items():
-            value += int(fixed[key] * available[key])
-            util = value / available[key]
-            print(f"  {key}: {int(value)} [{round(util*100, 2)}%]")
-    else:
-        print(f"\nResource Estimation [{num_ch} Channels] (only design usage)")
-        utilised = myEst.Total(num_ch, with_ta, with_hb, num_c_ch)
-        for key, value in utilised.items():
-            print(f"  {key}: {int(value)}")
+        #Resource of tapa::buffers 
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.BUFF_B(config), NUM_PES//2)
+        
+        #Resource of tapa::streams
+        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(64, FIFO_DEPTH, NUM_PES)) #a_in
+        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(16, FIFO_DEPTH, NUM_PES)) #c_row
+        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(32, FIFO_DEPTH, NUM_PES)) #c_val
+        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(3, FIFO_DEPTH, NUM_PES//2)) #c_flag
+        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(config.ch_width, FIFO_DEPTH, config.num_ch_A + 1)) #b_in
+        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(60, FIFO_DEPTH, NUM_PES//2)) #noc_in
+        if config.row_dist_net:
+            myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(16, FIFO_DEPTH, NUM_PES)) #noc_out
+            crossbar_streams_depth = (math.log2(NUM_PES) - 1) * 10
+            myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(60, crossbar_streams_depth, NUM_PES)) #noc_out
+        
+        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(32, FIFO_DEPTH, NUM_PES)) #c_arb
+        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(config.ch_width, FIFO_DEPTH, config.num_ch_C*3)) #c_ab, c_in, c_out
+
+        #Async MMAP
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.Async_MMAP(config), config.num_ch_A + config.num_ch_B + 2*config.num_ch_C)
+
+        return myResource
 
 
-class ResourceEstimate:
-    def __init__(self):
-        self.num_ch = 0
-        self.num_pes = 0
-        self.with_ta = 0
 
-    def scale(self, resource, scalar):
-        return Resource(
-            bram=resource.bram * scalar,
-            uram=resource.uram * scalar,
-            dsp=resource.dsp * scalar,
-            luts=resource.luts * scalar,
-            reg=resource.reg * scalar
+
+    @staticmethod
+    def scale_and_accumulate(bias, rsrc, scalar):
+        result = ResourceEstimator.add(bias, ResourceEstimator.multiply(rsrc, scalar))
+        return result
+    
+    @staticmethod
+    def multiply(resource, scalar):
+        return FPGAResource(
+            bram = resource.bram * scalar,
+            uram = resource.uram * scalar,
+            dsp = resource.dsp * scalar,
+            lut = resource.lut * scalar,
+            reg = resource.reg * scalar
         )
     
-    def add_resrcs(self, resource1, resource2):
-        return Resource(
-            bram=resource1.bram + resource2.bram,
-            uram=resource1.uram + resource2.uram,
-            dsp=resource1.dsp + resource2.dsp,
-            luts=resource1.luts + resource2.luts,
-            reg=resource1.reg + resource2.reg
+    @staticmethod
+    def add(rsrc1, rsrc2):
+        return FPGAResource(
+            bram = rsrc1.bram + rsrc2.bram,
+            uram = rsrc1.uram + rsrc2.uram,
+            dsp =  rsrc1.dsp + rsrc2.dsp,
+            lut =  rsrc1.lut + rsrc2.lut,
+            reg =  rsrc1.reg  + rsrc2.reg
         )
 
-    def MMAPS(self):
-        res = Resource(bram=0, uram=0, dsp=0, luts=87, reg=56)
-        res = self.scale(res, self.num_ch + 2 * self.num_c_ch + 1)
-        return res
+    @staticmethod
+    def MM2S_A():
+        return FPGAResource(bram=0, uram=0, dsp=0, lut=98, reg=87)
+
+    @staticmethod
+    def MM2S_B():
+        return FPGAResource(bram=0, uram=0, dsp=1, lut=59, reg=103)
     
-    def TreeAdders(self):
-        if self.with_ta != 0:
-            res = Resource(bram=0, uram=0, dsp=16, luts=2287, reg=2744)
+    @staticmethod
+    def MM2S_C():
+        return FPGAResource(bram=0, uram=0, dsp=0, lut=56, reg=139)
+    
+    @staticmethod
+    def S2MM_C():
+        return FPGAResource(bram=0, uram=0, dsp=0, lut=66, reg=143)
+    
+    @staticmethod
+    def LoadB():
+        return FPGAResource(bram=0, uram=0, dsp=0, lut=240, reg=245)
+    
+    @staticmethod
+    def ComputeAB(config):
+        if config.dense_overlay:
+            return FPGAResource(bram=0, uram=0, dsp=16, lut=1410, reg=1740)
         else:
-            res = Resource(bram=0, uram=0, dsp=0, luts=35, reg=125)
-
-        res = self.scale(res, self.num_pes // 2)
-        return res
+            return FPGAResource(bram=0, uram=0, dsp=6, lut=740, reg=740)
     
-    def ResulBuffs(self):
-        res = Resource(bram=0, uram=3, dsp=3, luts=838, reg=714)
-        res = self.scale(res, self.num_pes)
-        return res
-    
-    def PEGs(self):
-        if self.with_hb:
-            res = Resource(bram=0, uram=0, dsp=6, luts=2059, reg=1681)
-            res = self.add_resrcs(res, Resource(bram=16, uram=0, dsp=0, luts=447, reg=474))
-            
+    @staticmethod
+    def PreAccumulator(config):
+        if config.pre_accumulator:
+            return FPGAResource(bram=0, uram=0, dsp=16, lut=3091, reg=3752)
         else:
-            res = Resource(bram=0, uram=0, dsp=6, luts=800, reg=1092)
-            res = self.add_resrcs(res, Resource(bram=16, uram=0, dsp=0, luts=327, reg=606))
+            return FPGAResource(bram=0, uram=0, dsp=0, lut=29, reg=125)
 
         
-        res = self.scale(res, self.num_pes/2)
-        return res
-    
-    def DummyRead(self):
-        res = Resource(bram=0, uram=0, dsp=5, luts=83, reg=173)
-        return res
-    
-    def Compute_C(self):
-        res = Resource(bram=0, uram=0, dsp=130 , luts=6806, reg=9560)
-        res = self.scale(res, self.num_c_ch)
-        return res
-    
-    def Arbiter_C(self):
-        res = Resource(bram=0, uram=0, dsp=0, luts=99, reg=6)
-        res = self.scale(res, self.num_ch*self.num_c_ch)
-        res = self.add_resrcs(res, Resource(bram=0, uram=0, dsp=2, luts=229, reg=540))
-        return res
-    
-    def ADD_Blocks(self, num):
-        res = Resource(bram=0, uram=0, dsp=2, luts=488, reg=408)
-        res = self.scale(res, num)
-        return res
-
-    def Switch_Blocks(self, num):
-        res = Resource(bram=0, uram=0, dsp=0, luts=129, reg=5)
-        res = self.scale(res, num)
-        return res
-    
-    def Crossbar_streams(self, num):
-        # if self.with_ta:
-        res = Resource(bram=0, uram=0, dsp=0, luts=7, reg=9.5)
-        res = self.scale(res, num)
-        res = self.add_resrcs(res, Resource(bram=0, uram=0, dsp=0, luts=-75000, reg=39293))
-        return res
-    
-    def CrossBar(self):
-        myCB = CrossBarGen(self.num_pes)
-        myCB.buildGraph(False)
-        res = self.ADD_Blocks(myCB.total_add_blocks)
-        res = self.add_resrcs(res, self.Switch_Blocks(myCB.total_sw_blocks))
-        res = self.add_resrcs(res, self.Crossbar_streams(myCB.total_stream_depth))
-        # print("Total Depth: ", myCB.total_stream_depth)
-        return res
-        
-    
-    def Total(self, num_ch, with_ta, with_hb, num_c_ch):
-        self.num_ch = num_ch
-        self.num_pes = num_ch * 8
-        self.with_ta = with_ta
-        self.with_hb = with_hb
-        self.num_c_ch = num_c_ch
-        res = self.MMAPS()
-        res = self.add_resrcs(res, self.PEGs())
-        res = self.add_resrcs(res, self.DummyRead())
-        res = self.add_resrcs(res, self.TreeAdders())
-        res = self.add_resrcs(res, self.CrossBar())
-        res = self.add_resrcs(res, self.ResulBuffs())
-        res = self.add_resrcs(res, self.Arbiter_C())
-        res = self.add_resrcs(res, self.Compute_C())
-        
-        return {"bram": res.bram, "dsp": res.dsp, "uram": res.uram, "lut": res.luts, "ff": res.reg, "hbm": num_ch + 3}
-    
-
-def load_config_file(json_file_path):
-    try:
-        with open(json_file_path, 'r') as json_file:
-            data = json.load(json_file)
-            return data
-    except FileNotFoundError:
-        print(f"JSON file '{json_file_path}' not found.")
-        return {}
-    except json.JSONDecodeError:
-        print(f"Error decoding JSON from '{json_file_path}'.")
-        return {}
-
-
-def compute_optimum_num_ch(config_file, with_ta, with_hb, num_c_ch):
-    available = load_config_file(config_file)
-    max_bram = available["bram"] * thresh["bram"]
-    bram_per_ch = 64
-    init_guess = max_bram // bram_per_ch
-    #num_ch can only be even
-    init_guess = int((init_guess // (2*num_c_ch)) * (2*num_c_ch))
-    # print("Initial Guess:", init_guess)
-
-    myEst = ResourceEstimate()
-    num_ch = init_guess
-
-    while True:
-        utilised = myEst.Total(num_ch, with_ta, with_hb, num_c_ch)
-        
-        satisfied = 0
-        for key, value in utilised.items():
-            util = value / available[key]
-            # print(key, round(util, 2), ((util - thresh[key]) <= 0.0025))
-            satisfied += ((util + fixed[key] - thresh[key]) <= 0.01)
-        # print()
-            # print(satisfied)
-
-        if satisfied >= 5:
-            valid = True
-            for key, value in utilised.items():
-                util = value / available[key]
-                # print(key, round(util + fixed[key], 2), (util + fixed[key] - thresh[key]))
-                valid &= ((util + fixed[key] - thresh[key]) <= 0.1)
-            # print(valid)
-            if valid:
-                break
-
-            else:
-                num_ch -= (2*num_c_ch)
-
-
+    @staticmethod    
+    def AccumBuffer(config):
+        if config.pre_accumulator:
+            return FPGAResource(bram=0, uram=config.urams_per_pe, dsp=3, lut=869, reg=686)
         else:
-            num_ch -= (2*num_c_ch)
+            return FPGAResource(bram=0, uram=config.urams_per_pe, dsp=5, lut=717, reg=751)
+    
+    @staticmethod
+    def Compute_C(config):
+        fp32perch = config.ch_width // 32
+        return FPGAResource(bram=0, uram=0, dsp=8*fp32perch + 2, lut=414*fp32perch+75, reg=587*fp32perch+166)
+    
+    @staticmethod
+    def Arbitter_C():
+        return FPGAResource(bram=0, uram=0, dsp=2, lut=1000, reg=1000)
+    
+    @staticmethod
+    def ADD_Blocks():
+        return FPGAResource(bram=0, uram=0, dsp=2, lut=408, reg=488)
+    
+    @staticmethod
+    def SW_Blocks():
+        return FPGAResource(bram=0, uram=0, dsp=0, lut=82, reg=129)
+    
+    @staticmethod
+    def BUFF_B(config):
+        fp32perch = config.ch_width // 32
+        num_part = config.num_ch_B * fp32perch // 2
+        return FPGAResource(bram=num_part, uram=0, dsp=0, lut=0, reg=0)
+    
+    @staticmethod
+    def Streams(width, depth, channels):
+        lut_ram = width * ((depth - 1) / 16 + 1)
+        lut_logic = 15 + 3 * int(math.log2(depth))
+        ff = 7 + 3 * int(math.log2(depth))
+        return ResourceEstimator.multiply(FPGAResource(bram=0, uram=0, dsp=0, lut=int(lut_logic+lut_ram), reg=ff), channels)
 
-
-    print("\nResource Estimation [Optimum]")
-    utilised = myEst.Total(num_ch, with_ta, with_hb, num_c_ch)
-    for key, value in utilised.items():
-        value += int(fixed[key] * available[key])
-        util = value / available[key]
-        print(f"  {key}: {int(value)} [{round(util*100, 2)}%]")
-
-    return num_ch
+    @staticmethod
+    def Async_MMAP(config):
+        res = FPGAResource(bram=0, uram=0, dsp=0, lut=5000, reg=6500)
+        return ResourceEstimator.add(res, FPGAResource(bram=0, uram=0, dsp=0, lut=config.ch_width*2+713, reg=370))
+        

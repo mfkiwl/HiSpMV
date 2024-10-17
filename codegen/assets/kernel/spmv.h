@@ -10,6 +10,12 @@
 #define FIFO_DEPTH 2
 #define FIFO_LARGE_DEPTH 8
 
+#ifdef BUILD_PRE_ACCUMULATOR
+#define FP_ACC_LATENCY 4
+#else
+#define FP_ACC_LATENCY 5
+#endif
+
 #define II_DIST (FP_ACC_LATENCY + 1) 
 #define MAX_ROWS_PER_PE (URAMS_PER_PE * 4096)
 #define D (NUM_PES * MAX_ROWS_PER_PE)

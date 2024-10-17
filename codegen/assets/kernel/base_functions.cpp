@@ -113,7 +113,7 @@ void LoadB(tapa::istreams<channelB_t, NUM_B_CH>& b_in,
         if(c == B_len)
             c = 0;
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < LOAD_GROUP_SIZE; i++) {
             auto section = local_B[i].create_section();
             local_B[i].acquire(section);    
         }
@@ -141,7 +141,7 @@ void LoadB(tapa::istreams<channelB_t, NUM_B_CH>& b_in,
                 b_out[ch].write(temp[ch]);
         }
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < LOAD_GROUP_SIZE; i++) {
             auto section = local_B[i].create_section();
             section.release_section(); 
         }
@@ -260,10 +260,10 @@ void PreAccumulator(tapa::istreams<uint16_t, 2>& c_row, tapa::istreams<float, 2>
     float val_buff_part[2][II_DIST];
     ap_uint<24> row_buff_part[2][II_DIST];
     #pragma HLS bind_storage variable=val_buff_part type=RAM_2P impl=LUTRAM
-    #pragma HLS array_partition variable=val_buff_part type=complete
+    #pragma HLS array_partition variable=val_buff_part type=complete dim=0
 
     #pragma HLS bind_storage variable=row_buff_part type=RAM_2P impl=LUTRAM
-    #pragma HLS array_partition variable=row_buff_part type=complete
+    #pragma HLS array_partition variable=row_buff_part type=complete dim=0
 #endif
 
     main:
