@@ -2,9 +2,5 @@
 matrices/*
 builds
 builds/** 
-codegen/scripts/__pycache__
-codegen/scripts/__pycache__/**
-
-# Exclude binary file named "spmv" in any folder
-**/spmv
-**/*.log
+automation_tool/src/__pycache__
+automation_tool/src/__pycache__/**
