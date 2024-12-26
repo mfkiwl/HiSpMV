@@ -54,19 +54,6 @@ class SpMVConfig:
 def encodeSpMVConfig(spmv_config: SpMVConfig) -> str:
     """
     Encodes SpMV configuration into a specific string format.
-    
-    Parameters:
-    spmv_config (dict): A dictionary containing the SpMV configuration.
-                        Expected keys:
-                        - dense_overlay (bool)
-                        - pre_accumulator (bool)
-                        - row_dist_net (bool)
-                        - num_ch_A (int)
-                        - num_ch_B (int)
-                        - num_ch_C (int)
-    
-    Returns:
-    str: Encoded string based on the configuration.
     """
     base_string = "SpMV"
     prefixes = []

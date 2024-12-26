@@ -41,8 +41,13 @@ def save_to_csv(file_path: str, config: str, output_csv: str):
 
 def main(build_dir, fpga, matrices, dense_overlay):
     if len(matrices) == 0:
+        best_config = DSE.getBestConfig(fpga, dense_overlay)
+        config_str = encodeSpMVConfig(best_config)
+        build_path = os.path.join(build_dir, config_str)
+        myGen = SpMVCodeGen(best_config, build_path, fpga)
+        myGen.generateAll()
         sys.exit(0)
-    
+
     built_configs = set()
     csv_file = os.path.join(build_dir, "best-configs.csv")
 

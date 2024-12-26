@@ -84,7 +84,7 @@ class DSE():
         #Try to see if we can get to increase C channels
         max_c = (fpga.hbm.num_ch - best_config.num_ch_A - best_config.num_ch_B) // 2
         best_c = best_config.num_ch_C
-        while(max_c > best_c and 2*max_c < best_config.num_ch_A):
+        while(max_c > best_c and 2*max_c <= best_config.num_ch_A):
             if (best_config.num_ch_A % (2*max_c) == 0):
                 config = best_config
                 config.num_ch_C = max_c
@@ -102,7 +102,52 @@ class DSE():
         logger.debug(f"Cycles: {best_cycles}, Kernel Time: {kernel_time:.3e}, flops: {flops:.2e}")
         return best_config
     
-    
+    @staticmethod
+    def getBestConfig(fpga: FPGA, dense_overlay: bool = False) -> SpMVConfig:
+        best_config = None
+        # Assume the matrix is dense and use only 1 channel for input and output vectors
+        b = 1
+        c = 1
+        a = fpga.hbm.num_ch - b - 2*c
+        assert a >= 2, "Expected to have atleast 2 channels for sparse matrix A"
+
+        a = (a//2)*2
+        while(a):
+            config = SpMVConfig(num_ch_A=a, 
+                                num_ch_B=b, 
+                                num_ch_C=c, 
+                                urams_per_pe=2, 
+                                ch_width=fpga.hbm.ch_width,
+                                dense_overlay=dense_overlay,
+                                pre_accumulator=False,
+                                row_dist_net=True
+                                )
+            logger.debug(f"Config: {config}")
+            resource = ResourceEstimator.getDesignResource(config, fpga)
+            logger.debug(f"Resource: {resource}")
+            if DSE.allResourcesUnderLimit(resource, fpga):
+                best_config = config
+                break
+            else:
+                a -= 2
+                logger.debug(f"A {a}")
+
+        #Try to see if we can get to increase C channels
+        max_c = (fpga.hbm.num_ch - best_config.num_ch_A - best_config.num_ch_B) // 2
+        best_c = best_config.num_ch_C
+        while(max_c > best_c and 2*max_c <= best_config.num_ch_A):
+            if (best_config.num_ch_A % (2*max_c) == 0):
+                config = best_config
+                config.num_ch_C = max_c
+                resource = ResourceEstimator.getDesignResource(config, fpga)
+                logger.debug(f"Resource: {resource}")
+                if DSE.allResourcesUnderLimit(resource, fpga):
+                    best_config.num_ch_C = max_c
+                    break
+            max_c = 1 << ((max_c-1).bit_length() - 1)
+
+        logger.info(f"Best Config: {best_config}")
+        return best_config
     
     @staticmethod
     def mm_read(mtx_file: str) -> coo_matrix:
