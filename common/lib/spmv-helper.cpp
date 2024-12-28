@@ -699,7 +699,7 @@ double SpMVHelper::prepareDenseMtxForFPGA(const int rows, const int cols) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(end_gen - start_gen).count();
 }
 
-COOMatrix_t SpMVHelper::getMatrix() {
+const COOMatrix_t SpMVHelper::getMatrix() {
     return coo_mtx;
 }
 
@@ -715,31 +715,31 @@ std::pair<int, int> SpMVHelper::getPaddedMatrixDims() {
     return {padded_rows, padded_cols};
 }
 
-int SpMVHelper::getRowTiles() {
+uint16_t SpMVHelper::getRowTiles() {
     return row_tiles;
 }
 
-int SpMVHelper::getColTiles() {
+uint16_t SpMVHelper::getColTiles() {
     return col_tiles;
 }
 
-int SpMVHelper::getTotTiles() {
+uint32_t SpMVHelper::getTotTiles() {
     return row_tiles * col_tiles;
 }
 
-int SpMVHelper::getRowsPerPE() {
+uint32_t SpMVHelper::getRowsPerPE() {
     return rows_per_pe;
 }
 
-int SpMVHelper::getVectLength() {
+uint32_t SpMVHelper::getVectLength() {
     return b_len;
 }
 
-int SpMVHelper::getRunLength() {
+uint32_t SpMVHelper::getRunLength() {
     return prep_mtx[0].size()/pes_per_ch;
 }
 
-std::vector<aligned_vector<uint64_t>> SpMVHelper::getPreparedMtx() {
+const std::vector<aligned_vector<uint64_t>> SpMVHelper::getPreparedMtx() {
     return prep_mtx;
 }
 

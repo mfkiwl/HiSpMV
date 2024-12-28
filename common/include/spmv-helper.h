@@ -91,18 +91,18 @@ private:
     int rows;
     int cols;
     int nnz;
-    int rows_per_pe;
-    int b_len;
+    uint32_t rows_per_pe;
+    uint32_t b_len;
     int padded_rows;
     int padded_cols;
     int tile_rows;
     int tile_cols;
-    int row_tiles;
-    int col_tiles; 
+    uint16_t row_tiles;
+    uint16_t col_tiles; 
     std::vector<std::vector<CSRMatrix_t>> tiled_matrices;
     std::set<int>shared_row_indices;
 
-    //Preprocessing Parameter
+    // Preprocessing Parameter
     bool use_row_dist = true;
     bool use_pre_accum = true;
     bool use_dense_mode = true;
@@ -143,24 +143,27 @@ public:
     // Method to prepare Dense Matrix for FPGA
     double prepareDenseMtxForFPGA(const int rows, const int cols);
 
-    //Method to generate a vector with values
+    // Method to generate a vector with values
     std::vector<float> generateVector(int size);
 
     // Method to get Matrix Properties
-    COOMatrix_t getMatrix();
+    const COOMatrix_t getMatrix();
     std::pair<int, int> getMatrixDims();
     int getNNZ();
     std::pair<int, int> getPaddedMatrixDims();
-    int getRowTiles();
-    int getColTiles();
-    int getTotTiles();
-    int getRowsPerPE();
-    int getVectLength();
-    int getRunLength();
-    std::vector<aligned_vector<uint64_t>> getPreparedMtx();
+    uint16_t getRowTiles();
+    uint16_t getColTiles();
+    uint32_t getTotTiles();
+    uint32_t getRowsPerPE();
+    uint32_t getVectLength();
+    uint32_t getRunLength();
+    const std::vector<aligned_vector<uint64_t>> getPreparedMtx();
     bool isDense();
 
+    // Method to compute SpMV/GeMV on CPU using single thread
     double cpuSequential(const std::vector<float> B, std::vector<float>& Cin, const float alpha, const float beta, std::vector<float>& Cout);
+    
+    // Method used to print relative errors histogram 
     void printErrorStats(const std::vector<float>& cpu_ref, const std::vector<aligned_vector<float>>& fpga_out);
 };
 
