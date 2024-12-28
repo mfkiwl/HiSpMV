@@ -74,7 +74,7 @@ uint32_t FpgaHelper::loadMatricesToDevice(const std::vector<SpMVHelper*>& inputs
 
     //First matrix has offset of 0
     matrix_offsets.push_back(0);
-
+    uint32_t offset_size = 0;
     for(auto* mtx: matrices) {
         auto& prep_mtx = mtx->getPreparedMtx();
 
@@ -84,9 +84,8 @@ uint32_t FpgaHelper::loadMatricesToDevice(const std::vector<SpMVHelper*>& inputs
         }
 
         // All channels have same size
-        uint32_t buffer_size = prep_mtx[0].size() * sizeof(uint64_t);
-        uint32_t offset = matrix_offsets.back();
-        uint32_t new_size = offset + buffer_size;
+        uint32_t buffer_size = prep_mtx[0].size() * sizeof(uint64_t);;
+        uint32_t new_size = offset_size + buffer_size;
 
         // Make sure adding this matrix will not exceed max capacity
         if (new_size > MAX_BUFFER_SIZE_BYTES)
@@ -95,11 +94,12 @@ uint32_t FpgaHelper::loadMatricesToDevice(const std::vector<SpMVHelper*>& inputs
         // Fill in data from prepared matrix data for all channels
         for(int i = 0; i < num_ch_A; i++) {
             xrt::bo device_buffer = input_buffers[i];
-            std::memcpy(device_buffer.map<char*>() + offset, prep_mtx[i].data(), buffer_size);
+            std::memcpy(device_buffer.map<char*>() + offset_size, prep_mtx[i].data(), buffer_size);
         }
 
         // Update matrix offsets
-        matrix_offsets.push_back(new_size);
+        offset_size = new_size;
+        matrix_offsets.push_back(matrix_offsets.back() + mtx->getRunLength());
     }   
         
     // Sync Data transfer and set the buffers as kernel argument
