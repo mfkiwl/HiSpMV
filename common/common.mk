@@ -1,11 +1,12 @@
 CC = g++
-CFLAGS = -O2 -fopenmp -g
-LIBRARIES = -ltapa -lfrt -lglog -lgflags -lOpenCL -lpthread -L"$(CONDA_PREFIX)/lib/" -I"$(XILINX_HLS)/include" -I"$(PROJECT_DIR)/common/include" -std=c++17
-DEFINES = -DTAPA_BUFFER_SUPPORT -DTAPA_BUFFER_EXPLICIT_RELEASE
+CFLAGS = -O2 -fopenmp 
+LIBRARIES = -std=c++17 -ltapa -lfrt -lglog -lgflags -lOpenCL -lpthread -lstdc++ -lxrt_coreutil -L"$(CONDA_PREFIX)/lib/" -L"$(XILINX_XRT)/lib"
+INCLUDES = -I"$(XILINX_HLS)/include" -I"$(PROJECT_DIR)/common/include" -I"$(XILINX_XRT)/include"
+DEFINES = -DTAPA_BUFFER_SUPPORT -DTAPA_BUFFER_EXPLICIT_RELEASE 
 SRC_DIR = $(WORK_DIR)/src
 
 host: $(SRC_DIR)
-	$(CC) -o $(WORK_DIR)/spmv-host $(CFLAGS) $(SRC_DIR)/*.cpp $(PROJECT_DIR)/common/lib/*.cpp $(DEFINES) $(LIBRARIES)
+	$(CC) -o $(WORK_DIR)/spmv-host $(CFLAGS) $(SRC_DIR)/*.cpp $(PROJECT_DIR)/common/lib/*.cpp $(DEFINES) $(LIBRARIES) $(INCLUDES)
 
 tapa:
 	tapac -o $(WORK_DIR)/spmv.$(platform).hw.xo $(SRC_DIR)/spmv.cpp \
@@ -55,4 +56,4 @@ hw:
 	sh $(WORK_DIR)/spmv.$(platform).hw_generate_bitstream.sh
 
 clean:
-	rm -rf $(WORK_DIR)/host $(WORK_DIR)/spmv.$(platform).hw.xo
+	rm -rf $(WORK_DIR)/spmv-host $(WORK_DIR)/spmv.$(platform).hw.xo
