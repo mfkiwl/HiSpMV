@@ -1,60 +1,8 @@
 #include "spmv-helper.h"
 
-bool verifyTilingDirect(const COOMatrix_t& mtx, 
-                        const std::vector<std::vector<CSRMatrix_t>>& tiledCSR,
-                        int rows, int cols, int tile_rows, int tile_cols) {
-    // Loop over all nonzeros in the COO matrix
-    for (size_t i = 0; i < mtx.rows.size(); i++) {
-        int r = mtx.rows[i];      // Global row index
-        int c = mtx.cols[i];      // Global column index
-        float v = mtx.values[i];  // Value at (r, c)
-
-        // Determine the tile indices
-        int row_tile_idx = r / tile_rows;  // Tile row index
-        int col_tile_idx = c / tile_cols;  // Tile column index
-
-        // Determine the local row and column indices within the tile
-        int local_row = r % tile_rows;  // Row within the tile
-        int local_col = c % tile_cols;  // Column within the tile
-
-        // Fetch the corresponding tile
-        const auto& tile = tiledCSR[row_tile_idx][col_tile_idx];
-
-        // Find the value in the tile's CSR structure
-        int start = tile.row_offsets[local_row];
-        int end = tile.row_offsets[local_row + 1];
-        bool found = false;
-
-        for (int k = start; k < end; k++) {
-            if (tile.col_indices[k] == local_col && tile.values[k] == v) {
-                found = true;
-                break;
-            }
-        }
-
-        if (!found) {
-            std::cerr << "Mismatch for value at (" << r << ", " << c << ") = " << v << std::endl;
-            return false;
-        }
-    }
-
-    std::cout << "All values verified successfully!" << std::endl;
-    return true;
-}
-
-// Function to generate a matrix based on loop iterator values
-std::vector<std::vector<float>> generateMatrix(int rows, int cols) {
-    std::vector<std::vector<float>> matrix(rows, std::vector<float>(cols));
-    for (int i = 0; i < rows; ++i) {
-        for (int j = 0; j < cols; ++j) {
-            matrix[i][j] = (float)(i + j + 1) / std::max(rows, cols);  // Matrix values generated from loop indices
-        }
-    }
-    return matrix;
-}
 
 // Constructor implementation
-SpMVHelper::SpMVHelper(int a, int b, int c, int width, int urams, int fp_acc_latency, bool dense, bool pre_acc, bool row_dist)
+HiSpmvHandle::HiSpmvHandle(int a, int b, int c, int width, int urams, int fp_acc_latency, bool dense, bool pre_acc, bool row_dist)
     : num_ch_A(a), num_ch_B(b), num_ch_C(c),
       ch_width(width), urams_per_pe(urams), fp_acc_latency(fp_acc_latency),
       dense_overlay(dense), pre_accumulator(pre_acc), row_dist_net(row_dist) {
@@ -71,7 +19,7 @@ SpMVHelper::SpMVHelper(int a, int b, int c, int width, int urams, int fp_acc_lat
 }
 
 // Method to display the configuration
-void SpMVHelper::displayConfig() const {
+void HiSpmvHandle::displayConfig() const {
     std::cout << "\nHardware Configuration:" << std::endl;
     std::cout << "\tNumber of Channels (A): " << num_ch_A << std::endl;
     std::cout << "\tNumber of Channels (B): " << num_ch_B << std::endl;
@@ -84,7 +32,7 @@ void SpMVHelper::displayConfig() const {
 }
 
 // Method to load COO Matrix from File
-COOMatrix_t SpMVHelper::loadMtx(const std::string& mtx_file) {
+COOMatrix_t HiSpmvHandle::loadMtx(const std::string& mtx_file) {
     COOMatrix_t mtx;
     std::ifstream file(mtx_file);
     if (!file.is_open()) {
@@ -189,7 +137,7 @@ COOMatrix_t SpMVHelper::loadMtx(const std::string& mtx_file) {
 }
 
 // Method to tile and pad Sparse Matrix in COO format into CSR format
-std::vector<std::vector<CSRMatrix_t>> SpMVHelper::tileAndPad(COOMatrix_t mtx) {
+std::vector<std::vector<CSRMatrix_t>> HiSpmvHandle::tileAndPad(COOMatrix_t mtx) {
     tileAndPad();
     std::vector<std::vector<CSRMatrix_t>> csr_matrices(row_tiles, std::vector<CSRMatrix_t>(col_tiles));
     
@@ -279,7 +227,20 @@ std::vector<std::vector<CSRMatrix_t>> SpMVHelper::tileAndPad(COOMatrix_t mtx) {
     return csr_matrices;
 }
 
-void SpMVHelper::tileAndPad() {
+// Method to tile and pad Dense Matrix (overload)
+std::vector<std::vector<float>> HiSpmvHandle::tileAndPad(const std::vector<float>& dense_vals) {
+    tileAndPad();
+    assert(row_tiles == 1 && "Too many rows, dense mode cannot support more than one tile along row dimension");
+    std::vector<std::vector<float>> mtx(padded_rows, std::vector<float>(padded_cols, 0));
+    for(int i = 0; i < rows; i++) {
+        for(int j = 0; j < cols; j++) {
+            mtx[i][j] = dense_vals[i * cols + j];
+        }
+    }
+    return std::move(mtx);
+}
+
+void HiSpmvHandle::tileAndPad() {
     //Pad rows and cols
     //Rows should be integer multiple of number of pes
     //Cols should be integer multiple of num_b_ch * fp32_per_ch 
@@ -302,7 +263,7 @@ void SpMVHelper::tileAndPad() {
     std::cout << "\tRows Per PE: " << rows_per_pe << "\n\tB length: " << b_len << "\n" << std::endl;
 }
 
-std::vector<int> SpMVHelper::balanceWorkload(const CSRMatrix_t& csr_matrix)
+std::vector<int> HiSpmvHandle::balanceWorkload(const CSRMatrix_t& csr_matrix)
 {
     int rows_per_tile_per_pe = tile_rows/num_pes;
 
@@ -391,7 +352,7 @@ std::vector<int> SpMVHelper::balanceWorkload(const CSRMatrix_t& csr_matrix)
 }
 
 
-int SpMVHelper::computeTileSize(const CSRMatrix_t& csr_matrix, const std::vector<int>& shared_rows) 
+int HiSpmvHandle::computeTileSize(const CSRMatrix_t& csr_matrix, const std::vector<int>& shared_rows) 
 {
     int dep_dist = (pre_accumulator && use_pre_accum) ? 1 : fp_acc_latency + 1;
     std::vector<std::vector<int>> pe_workloads(num_pes, std::vector<int>(dep_dist, 0));
@@ -480,7 +441,7 @@ int SpMVHelper::computeTileSize(const CSRMatrix_t& csr_matrix, const std::vector
     return (max_load + PADDING) * dep_dist;
 }
 
-void SpMVHelper::prepareTile(const CSRMatrix_t& csr_matrix, const std::vector<int>& shared_rows, const int size, const int offset, std::vector<aligned_vector<uint64_t>>& fpga_mtx)
+void HiSpmvHandle::prepareTile(const CSRMatrix_t& csr_matrix, const std::vector<int>& shared_rows, const int size, const int offset, std::vector<aligned_vector<uint64_t>>& fpga_mtx)
 {
     int dep_dist = (pre_accumulator && use_pre_accum) ? 1 : fp_acc_latency + 1;
     //schedule shared rows first
@@ -602,20 +563,25 @@ void SpMVHelper::prepareTile(const CSRMatrix_t& csr_matrix, const std::vector<in
 }
 
 // Function to generate a vector based on loop iterator values
-std::vector<float> SpMVHelper::generateVector(int size) {
-    std::vector<float> vec(size);
-    for (int i = 0; i < size; ++i) {
-        vec[i] = 1.0;  // Vector values generated from loop indices
-    }
-    return vec;
+
+double HiSpmvHandle::prepareSparseMtxForFPGA(const std::string& mtx_file) {
+    //Load Sparse Matrix File from ".mtx" file
+    this->coo_mtx = loadMtx(mtx_file);
+    return prepareSparseMtxForFPGA();
 }
 
-double SpMVHelper::prepareSparseMtxForFPGA(const std::string& mtx_file) {
+double HiSpmvHandle::prepareSparseMtxForFPGA(const int rows, const int cols, const std::vector<int>& coo_rows, const std::vector<int>& coo_cols, const std::vector<float>& coo_vals) {
+    this->rows = rows;
+    this->cols = cols;
+    this->nnz = coo_rows.size();
+    this->coo_mtx.rows = std::move(coo_rows);
+    this->coo_mtx.cols = std::move(coo_cols);
+    this->coo_mtx.values = std::move(coo_vals);
+    return prepareSparseMtxForFPGA();
+}
+
+double HiSpmvHandle::prepareSparseMtxForFPGA() {
     auto start_gen = std::chrono::steady_clock::now();
-
-    //Load Sparse Matrix File from ".mtx" file
-    coo_mtx = loadMtx(mtx_file);
-
     //Tile and Pad Matrix and store tiled matrices in CSR format
     std::vector<std::vector<CSRMatrix_t>> tiled_matrices = tileAndPad(coo_mtx);
 
@@ -663,15 +629,14 @@ double SpMVHelper::prepareSparseMtxForFPGA(const std::string& mtx_file) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(end_gen - start_gen).count();
 }
 
-double SpMVHelper::prepareDenseMtxForFPGA(const int rows, const int cols) {
+double HiSpmvHandle::prepareDenseMtxForFPGA(const int rows, const int cols, const std::vector<float>& dense_vals) {
     assert(dense_overlay && "Hardware is not built with Dense Overlay, cannot support dense workload");
     auto start_gen = std::chrono::steady_clock::now();
     this->rows = rows;
     this->cols = cols;
     this->nnz = rows*cols;
-    tileAndPad();
-    assert(row_tiles == 1 && "Too many rows, dense mode cannot support more than one tile along row dimension");
-    dense_mtx = std::move(generateMatrix(padded_rows, padded_cols));
+    
+    dense_mtx = tileAndPad(dense_vals);
     uint32_t A_len = rows_per_pe * padded_cols / 2;
 
     std::vector<aligned_vector<uint64_t>>fpga_mtx(num_ch_A, aligned_vector<uint64_t>(A_len * pes_per_ch, 0));
@@ -699,59 +664,59 @@ double SpMVHelper::prepareDenseMtxForFPGA(const int rows, const int cols) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(end_gen - start_gen).count();
 }
 
-const COOMatrix_t SpMVHelper::getMatrix() {
+const COOMatrix_t HiSpmvHandle::getMatrix() {
     return coo_mtx;
 }
 
-std::pair<int, int> SpMVHelper::getMatrixDims() {
+std::pair<int, int> HiSpmvHandle::getMatrixDims() {
     return {rows, cols};
 }
 
-int SpMVHelper::getNNZ() {
+int HiSpmvHandle::getNNZ() {
     return nnz;
 }
 
-std::pair<int, int> SpMVHelper::getPaddedMatrixDims() {
+std::pair<int, int> HiSpmvHandle::getPaddedMatrixDims() {
     return {padded_rows, padded_cols};
 }
 
-uint16_t SpMVHelper::getRowTiles() {
+uint16_t HiSpmvHandle::getRowTiles() {
     return row_tiles;
 }
 
-uint16_t SpMVHelper::getColTiles() {
+uint16_t HiSpmvHandle::getColTiles() {
     return col_tiles;
 }
 
-uint32_t SpMVHelper::getTotTiles() {
+uint32_t HiSpmvHandle::getTotTiles() {
     return row_tiles * col_tiles;
 }
 
-uint32_t SpMVHelper::getRowsPerPE() {
+uint32_t HiSpmvHandle::getRowsPerPE() {
     return rows_per_pe;
 }
 
-uint32_t SpMVHelper::getVectLength() {
+uint32_t HiSpmvHandle::getVectLength() {
     return b_len;
 }
 
-uint32_t SpMVHelper::getRunLength() {
+uint32_t HiSpmvHandle::getRunLength() {
     return prep_mtx[0].size()/pes_per_ch;
 }
 
-const std::vector<aligned_vector<uint64_t>> SpMVHelper::getPreparedMtx() {
+const std::vector<aligned_vector<uint64_t>> HiSpmvHandle::getPreparedMtx() {
     return prep_mtx;
 }
 
-bool SpMVHelper::isSharedRow(int row_idx) {
+bool HiSpmvHandle::isSharedRow(int row_idx) {
     return (shared_row_indices.find(row_idx) != shared_row_indices.end());
 }
 
-bool SpMVHelper::isDense() {
+bool HiSpmvHandle::isDense() {
     return (!dense_mtx.empty());
 }
 
-double SpMVHelper::cpuSequential(const std::vector<float> B, std::vector<float>& Cin, const float alpha, const float beta, std::vector<float>& Cout) {
+double HiSpmvHandle::cpuSequential(const std::vector<float> B, std::vector<float>& Cin, const float alpha, const float beta, std::vector<float>& Cout) {
     // Perform matrix-vector multiplication
     auto start_cpu = std::chrono::steady_clock::now();
     if (isDense()) 
@@ -774,18 +739,16 @@ double SpMVHelper::cpuSequential(const std::vector<float> B, std::vector<float>&
     return std::chrono::duration_cast<std::chrono::nanoseconds>(end_cpu - start_cpu).count();
 }
 
-void SpMVHelper::printErrorStats(const std::vector<float>& cpu_ref, const std::vector<aligned_vector<float>>& fpga_out) 
+void HiSpmvHandle::printErrorStats(const std::vector<float>& cpu_ref, const std::vector<float>& fpga_out) 
 {
-    if (cpu_ref.size() != fpga_out[0].size()*num_ch_C) {
+    if (cpu_ref.size() != fpga_out.size()) {
         throw std::runtime_error("Error: Vector sizes do not match!");
     }
 
     //Compute Relative Errors
     std::vector<double> relative_errors;
     for (size_t i = 0; i < cpu_ref.size(); ++i) {
-        int ch = (i / fp32_per_ch) % num_ch_C;
-        int addr = (i / (fp32_per_ch * num_ch_C)) * fp32_per_ch + (i % fp32_per_ch);
-        double fpga = static_cast<double>(std::fabs(fpga_out[ch][addr]));
+        double fpga = static_cast<double>(std::fabs(fpga_out[i]));
         double cpu = static_cast<double>(std::fabs(cpu_ref[i]));
         double epsilon = std::numeric_limits<double>::lowest();
         double ref = std::max(cpu, epsilon);
@@ -836,4 +799,44 @@ void SpMVHelper::printErrorStats(const std::vector<float>& cpu_ref, const std::v
         double bin_end = bin_start + bin_width;
         std::cout << "[" << std::scientific << std::setprecision(3) << bin_start << ", " << bin_end << "):\t" << bin_counts[i] << "\n";
     }
+}
+
+std::vector<aligned_vector<float>> HiSpmvHandle::prepareInputVector(const std::vector<float>& b) {
+    assert(b.size() == cols && "Expected input vector to match col dimension of the matrix");
+    std::vector<aligned_vector<float>>fpgaBinVect(num_ch_B, aligned_vector<float>(padded_cols/num_ch_B, 0));
+    for (int i = 0; i < cols; i++) {
+        int ch = (i / fp32_per_ch) % num_ch_B;
+        int addr = (i / (fp32_per_ch * num_ch_B)) * fp32_per_ch + (i % fp32_per_ch);
+        fpgaBinVect[ch][addr] = b[i];
+    }
+    return std::move(fpgaBinVect);
+}
+
+std::vector<aligned_vector<float>> HiSpmvHandle::prepareBiasVector(const std::vector<float>& c_in) {
+    assert(c_in.size() == rows && "Expected bias vector to match row dimension of the matrix");
+    std::vector<aligned_vector<float>>fpgaCinVect(num_ch_C, aligned_vector<float>(padded_rows/num_ch_C, 0));
+    for (int i = 0; i < rows; i++) {
+        int ch = (i / fp32_per_ch) % num_ch_C;
+        int addr = (i / (fp32_per_ch * num_ch_C)) * fp32_per_ch + (i % fp32_per_ch);
+        fpgaCinVect[ch][addr] = c_in[i];
+    }
+    return std::move(fpgaCinVect);
+}
+
+std::vector<aligned_vector<float>> HiSpmvHandle::allocateOutputVector() {
+    std::vector<aligned_vector<float>>fpgaCoutVect(num_ch_C, aligned_vector<float>(padded_rows/num_ch_C, 0));
+    return std::move(fpgaCoutVect);
+}
+
+std::vector<float> HiSpmvHandle::collectOutputVector(const std::vector<aligned_vector<float>>& fpgaCoutVect) {
+    assert(fpgaCoutVect.size() == num_ch_C && "Output Channels doesn't match the expected value");
+    int out_size = padded_rows/num_ch_C;
+    assert(fpgaCoutVect[0].size() == out_size && "Ouput Size doesn't match the expected size");
+    std::vector<float> c_out(rows);
+    for (int i = 0; i < rows; i++) {
+        int ch = (i / fp32_per_ch) % num_ch_C;
+        int addr = (i / (fp32_per_ch * num_ch_C)) * fp32_per_ch + (i % fp32_per_ch);
+        c_out[i] = fpgaCoutVect[ch][addr];
+    }    
+    return std::move(c_out);
 }

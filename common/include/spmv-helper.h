@@ -1,5 +1,5 @@
-#ifndef SPMV_HELPER_H
-#define SPMV_HELPER_H
+#ifndef HISPMV_HANDLE_H
+#define HISPMV_HANDLE_H
 
 #include <iostream>
 #include <vector>
@@ -52,7 +52,7 @@ inline uint64_t encode(bool tileEnd, bool rowEnd, bool sharedRow, uint16_t row, 
     return res;
 }
 
-class SpMVHelper {
+class HiSpmvHandle {
 private:
     // Matrix Market Constant parameters
     static constexpr const char* MatrixMarketBanner = "%%MatrixMarket";
@@ -119,6 +119,9 @@ private:
     std::vector<std::vector<CSRMatrix_t>> tileAndPad(COOMatrix_t mtx); 
 
     //Method to tile and pad Dense Matrix (overload)
+    std::vector<std::vector<float>> tileAndPad(const std::vector<float>& dense_vals);
+
+    //Method to compute tiles and padding dimensions
     void tileAndPad();
 
     // Method to balance PE workloads and return shared rows
@@ -135,16 +138,31 @@ private:
 
 public:
     // Constructor to initialize the configuration
-    SpMVHelper(int a, int b, int c, int width, int urams, int fp_acc_latency, bool dense, bool pre_acc, bool row_dist);
+    HiSpmvHandle(int a, int b, int c, int width, int urams, int fp_acc_latency, bool dense, bool pre_acc, bool row_dist);
     
-    // Method to prepare Sparse Matrix for FPGA
+    // Method to prepare Sparse Matrix for FPGA from mtx file
     double prepareSparseMtxForFPGA(const std::string& mtx_file);
 
-    // Method to prepare Dense Matrix for FPGA
-    double prepareDenseMtxForFPGA(const int rows, const int cols);
+    // Method to prepare Sparse Matrix for FPGA from C00 mtx
+    double prepareSparseMtxForFPGA(const int rows, const int cols, const std::vector<int>& coo_rows, const std::vector<int>& coo_cols, const std::vector<float>& coo_vals);
 
-    // Method to generate a vector with values
-    std::vector<float> generateVector(int size);
+    // Method to prepare Dense Matrix for FPGA from flattened array
+    double prepareDenseMtxForFPGA(const int rows, const int cols, const std::vector<float>& vals);
+
+    // Method to prepare Sparse Matrix for FPGA 
+    double prepareSparseMtxForFPGA();
+
+    // Method to prepare Input Vector for FPGA
+    std::vector<aligned_vector<float>> prepareInputVector(const std::vector<float>& b);
+
+    // Method to prepare Bias Bector for FPGA
+    std::vector<aligned_vector<float>> prepareBiasVector(const std::vector<float>& c_in);
+
+    // Method to allocate Output Vector for FPGA
+    std::vector<aligned_vector<float>> allocateOutputVector();
+
+    // Method to collect Output Vector from FPGA
+    std::vector<float> collectOutputVector(const std::vector<aligned_vector<float>>& c_out);
 
     // Method to get Matrix Properties
     const COOMatrix_t getMatrix();
@@ -164,7 +182,7 @@ public:
     double cpuSequential(const std::vector<float> B, std::vector<float>& Cin, const float alpha, const float beta, std::vector<float>& Cout);
     
     // Method used to print relative errors histogram 
-    void printErrorStats(const std::vector<float>& cpu_ref, const std::vector<aligned_vector<float>>& fpga_out);
+    void printErrorStats(const std::vector<float>& cpu_ref, const std::vector<float>& fpga_out);
 };
 
 #endif
