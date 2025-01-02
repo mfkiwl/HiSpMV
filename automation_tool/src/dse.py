@@ -103,7 +103,7 @@ class DSE():
         return best_config
     
     @staticmethod
-    def getBestConfig(fpga: FPGA, dense_overlay: bool = False) -> SpMVConfig:
+    def getSingleBestConfig(fpga: FPGA, dense_overlay: bool = False) -> SpMVConfig:
         best_config = None
         # Assume the matrix is dense and use only 1 channel for input and output vectors
         b = 1

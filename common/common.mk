@@ -24,9 +24,9 @@ tapa:
   --enable-synth-util \
   --max-parallel-synth-jobs 24 \
   --floorplan-output constraint.tcl \
-  --clock-period 4.00 \
+  --clock-period 4.25 \
   --enable-buffer-exprel \
-  --min-area-limit 0.55
+  --min-area-limit 0.55 
 
 tapa_fast:
 	tapac -o $(WORK_DIR)/spmv.$(platform).hw.xo $(SRC_DIR)/spmv.cpp \

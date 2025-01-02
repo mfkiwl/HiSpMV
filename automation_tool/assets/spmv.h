@@ -6,8 +6,12 @@
 #include <ap_int.h>
 #include "hw_defs.h"
 
+
+#ifdef BUILD_ROW_DIST_NETWORK
 #define FIFO_DEPTH 2
-#define FIFO_LARGE_DEPTH 8
+#else
+#define FIFO_DEPTH 8
+#endif
 
 #ifdef BUILD_PRE_ACCUMULATOR
 #define FP_ACC_LATENCY 4
