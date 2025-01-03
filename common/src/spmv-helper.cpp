@@ -146,7 +146,7 @@ std::vector<std::vector<CSRMatrix_t>> HiSpmvHandle::tileAndPad(COOMatrix_t mtx) 
             csr_matrices[i][j].row_offsets = std::vector<int>(tile_rows + 1, 0);
 
     // Compute row count for each tile
-    for (int l = 0; l < mtx.rows.size(); l++) {
+    for (size_t l = 0; l < mtx.rows.size(); l++) {
         int r = mtx.rows[l];
         int c = mtx.cols[l];
         
@@ -303,7 +303,6 @@ std::vector<int> HiSpmvHandle::balanceWorkload(const CSRMatrix_t& csr_matrix)
     int best_load = max_pe_load;
 
     for (int k = 0; k < num_pes; ++k) {
-        int baseline_pe_idx = pe_workloads[k].first;
         int baseline_pe_load = pe_workloads[k].second;
 
         std::vector<int> curr_removed_rows;
@@ -374,7 +373,6 @@ int HiSpmvHandle::computeTileSize(const CSRMatrix_t& csr_matrix, const std::vect
     });
 
     for(int k = 0; k < num_shared_rows; k++) {
-        int row_id = shared_rows_sorted[k].first; 
         int row_size = shared_rows_sorted[k].second;
         int load_size = ((row_size - 1)/num_pes) + 1;
 
@@ -731,7 +729,7 @@ double HiSpmvHandle::cpuSequential(const std::vector<float> B, std::vector<float
         }
     }
 
-    for (int i = 0; i < Cout.size(); i++)
+    for (size_t i = 0; i < Cout.size(); i++)
         Cout[i] = (alpha*Cout[i]) + (beta*Cin[i]);
 
     auto end_cpu = std::chrono::steady_clock::now();
