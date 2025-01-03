@@ -237,7 +237,7 @@ std::vector<std::vector<float>> HiSpmvHandle::tileAndPad(const std::vector<float
             mtx[i][j] = dense_vals[i * cols + j];
         }
     }
-    return std::move(mtx);
+    return mtx;
 }
 
 void HiSpmvHandle::tileAndPad() {
@@ -809,7 +809,7 @@ std::vector<aligned_vector<float>> HiSpmvHandle::prepareInputVector(const std::v
         int addr = (i / (fp32_per_ch * num_ch_B)) * fp32_per_ch + (i % fp32_per_ch);
         fpgaBinVect[ch][addr] = b[i];
     }
-    return std::move(fpgaBinVect);
+    return fpgaBinVect;
 }
 
 std::vector<aligned_vector<float>> HiSpmvHandle::prepareBiasVector(const std::vector<float>& c_in) {
@@ -820,12 +820,12 @@ std::vector<aligned_vector<float>> HiSpmvHandle::prepareBiasVector(const std::ve
         int addr = (i / (fp32_per_ch * num_ch_C)) * fp32_per_ch + (i % fp32_per_ch);
         fpgaCinVect[ch][addr] = c_in[i];
     }
-    return std::move(fpgaCinVect);
+    return fpgaCinVect;
 }
 
 std::vector<aligned_vector<float>> HiSpmvHandle::allocateOutputVector() {
     std::vector<aligned_vector<float>>fpgaCoutVect(num_ch_C, aligned_vector<float>(padded_rows/num_ch_C, 0));
-    return std::move(fpgaCoutVect);
+    return fpgaCoutVect;
 }
 
 std::vector<float> HiSpmvHandle::collectOutputVector(const std::vector<aligned_vector<float>>& fpgaCoutVect) {
@@ -838,5 +838,5 @@ std::vector<float> HiSpmvHandle::collectOutputVector(const std::vector<aligned_v
         int addr = (i / (fp32_per_ch * num_ch_C)) * fp32_per_ch + (i % fp32_per_ch);
         c_out[i] = fpgaCoutVect[ch][addr];
     }    
-    return std::move(c_out);
+    return c_out;
 }
