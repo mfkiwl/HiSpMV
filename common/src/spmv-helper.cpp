@@ -15,7 +15,6 @@ HiSpmvHandle::HiSpmvHandle(int a, int b, int c, int width, int urams, int fp_acc
     assert((num_pes % num_fp32s_c == 0) && "Number of PEs should be an  integer multiple of Number of FP32 elements in output vector");
     max_window = (num_fp32s_b / 2) * 1024; // 1k fp32 per BRAM36K and 2 ports
     max_depth = num_pes * urams_per_pe * 4096; // Eache URAM has 4K adresses
-    displayConfig();
 }
 
 // Method to display the configuration

@@ -39,6 +39,7 @@ int main(int argc, char* argv[]) {
     false
     #endif
   );
+  hamdle.displayConfig();
 
   if (argc == 3) { 
     char* filename = argv[1];

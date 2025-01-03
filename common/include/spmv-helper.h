@@ -108,9 +108,7 @@ private:
     bool use_dense_mode = true;
     bool use_old_balancing_algorithm = false;
     std::vector<aligned_vector<uint64_t>> prep_mtx;
-    
-    // Method to display the configuration
-    void displayConfig() const;
+
 
     // Method to load Sparse Matrix from Matrix Market file (.mtx)
     COOMatrix_t loadMtx(const std::string& mtx_file);
@@ -139,6 +137,9 @@ private:
 public:
     // Constructor to initialize the configuration
     HiSpmvHandle(int a, int b, int c, int width, int urams, int fp_acc_latency, bool dense, bool pre_acc, bool row_dist);
+
+    // Method to display the configuration
+    void displayConfig() const;
     
     // Method to prepare Sparse Matrix for FPGA from mtx file
     double prepareSparseMtxForFPGA(const std::string& mtx_file);
