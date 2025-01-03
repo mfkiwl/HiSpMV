@@ -1,0 +1,7 @@
+requests
+pybind11
+transformers
+torch
+numba
+scipy
+setuptools

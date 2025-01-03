@@ -4,3 +4,6 @@ builds
 builds/** 
 automation_tool/src/__pycache__
 automation_tool/src/__pycache__/**
+pyhispmv/build**
+pyhispmv/*.so
+pyhispmv/pyhispmv.egg-info
