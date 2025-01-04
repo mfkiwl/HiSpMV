@@ -154,10 +154,10 @@ public:
     double prepareSparseMtxForFPGA();
 
     // Method to prepare Input Vector for FPGA
-    std::vector<aligned_vector<float>> prepareInputVector(const std::vector<float>& b);
+    std::vector<aligned_vector<float>> prepareInputVector(const float* b);
 
     // Method to prepare Bias Bector for FPGA
-    std::vector<aligned_vector<float>> prepareBiasVector(const std::vector<float>& c_in);
+    std::vector<aligned_vector<float>> prepareBiasVector(const float* c_in);
 
     // Method to allocate Output Vector for FPGA
     std::vector<aligned_vector<float>> allocateOutputVector();

@@ -78,10 +78,10 @@ int main(int argc, char* argv[]) {
   cout << "CPU GFLOPS: " << 2.0 * (nnz + rows) / time_cpu_ns << "\n";
 
   cout << "Preparing FPGA C Vec..."  << endl;
-  auto fpgaCinVect = handle.prepareBiasVector(cpuCinVect);
+  auto fpgaCinVect = handle.prepareBiasVector(cpuCinVect.data());
 
   cout << endl << "Preparing FPGA B Vec..."  << endl;
-  auto fpgaBinVect = handle.prepareInputVector(cpuBinVect);
+  auto fpgaBinVect = handle.prepareInputVector(cpuBinVect.data());
 
 
   cout << endl << "Computing on FPGA..."  << endl;
