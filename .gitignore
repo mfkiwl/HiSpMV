@@ -7,3 +7,4 @@ automation_tool/src/__pycache__/**
 pyhispmv/build**
 pyhispmv/*.so
 pyhispmv/pyhispmv.egg-info
+apps/__pycache__
