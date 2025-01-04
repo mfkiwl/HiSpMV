@@ -31,5 +31,10 @@ PYBIND11_MODULE(pyhispmv, m) {
         // Method to run the kernel
         .def("run_kernel", &FpgaHandle::runKernel,
              py::arg("x"), py::arg("bias"), py::arg("y"), py::arg("alpha"), py::arg("beta"),
-             "Runs the SpMV kernel with the provided input/output vectors and scalars");
+             "Runs the SpMV kernel with the provided input/output vectors and scalars")
+
+        // Method to run the kernel
+        .def("run_kernels", &FpgaHandle::runKernels,
+             py::arg("x"), py::arg("bias"), py::arg("y"), py::arg("alpha"), py::arg("beta"),
+             "Runs the SpMM kernel with the provided input/output vectors and scalars");
 }

@@ -506,7 +506,8 @@ void HiSpmvHandle::prepareTile(const CSRMatrix_t& csr_matrix, const std::vector<
                 int ind = row_start + (l * num_pes) + pe;
                 int col_id = (ind < row_end) ? csr_matrix.col_indices[ind] : 0; 
                 float value = (ind < row_end) ? csr_matrix.values[ind] : 0;
-                uint32_t val_bits = *(uint32_t*)&value;
+                uint32_t val_bits;
+                std::memcpy(&val_bits, &value, sizeof(float));
                 int addr = offset + (((pe_loads[pe][min_idx] * dep_dist) + min_idx) * pes_per_ch) + inter_ch_pe;
                 fpga_mtx[ch_no][addr] = encode(false, true, true, row16, col_id, val_bits);
                 pe_loads[pe][min_idx]++;
@@ -517,7 +518,6 @@ void HiSpmvHandle::prepareTile(const CSRMatrix_t& csr_matrix, const std::vector<
     //schedule remaining rows
     for(int k = 0; k < num_rem_rows; k++) {
         int row_no = rem_rows_sorted[k].first; 
-        int row_size = rem_rows_sorted[k].second;
         int pe = row_no % num_pes;
         int min_idx = 0;
         int min = pe_loads[pe][min_idx];
@@ -535,7 +535,8 @@ void HiSpmvHandle::prepareTile(const CSRMatrix_t& csr_matrix, const std::vector<
         for(int ind = csr_matrix.row_offsets[row_no]; ind < csr_matrix.row_offsets[row_no+1]; ind++) {
             int col_id = csr_matrix.col_indices[ind];
             float value = csr_matrix.values[ind];
-            uint32_t val_bits = *(uint32_t*)&value;
+            uint32_t val_bits;
+            std::memcpy(&val_bits, &value, sizeof(float));
             int addr = offset + (((pe_loads[pe][min_idx] * dep_dist) + min_idx) * pes_per_ch) + inter_ch_pe;
             fpga_mtx[ch_no][addr] = encode(false, true, false, row16, col_id, val_bits);
             pe_loads[pe][min_idx]++;
@@ -551,7 +552,8 @@ void HiSpmvHandle::prepareTile(const CSRMatrix_t& csr_matrix, const std::vector<
                 int col_id = 0;
                 uint16_t row16 = 0;
                 float value = 0;
-                uint32_t val_bits = *(uint32_t*)&value;
+                uint32_t val_bits;
+                std::memcpy(&val_bits, &value, sizeof(float));
                 int addr = offset + ((pe_loads[p][ii]++) * dep_dist + ii) * pes_per_ch + inter_ch_pe;
                 fpga_mtx[ch_no][addr] = encode(tileEnd, false, false, row16, col_id, val_bits);
             }
@@ -827,8 +829,7 @@ std::vector<aligned_vector<float>> HiSpmvHandle::allocateOutputVector() {
 
 std::vector<float> HiSpmvHandle::collectOutputVector(const std::vector<aligned_vector<float>>& fpgaCoutVect) {
     assert(fpgaCoutVect.size() == num_ch_C && "Output Channels doesn't match the expected value");
-    int out_size = padded_rows/num_ch_C;
-    assert(fpgaCoutVect[0].size() == out_size && "Ouput Size doesn't match the expected size");
+    assert(fpgaCoutVect[0].size() == (padded_rows/num_ch_C) && "Ouput Size doesn't match the expected size");
     std::vector<float> c_out(rows);
     for (int i = 0; i < rows; i++) {
         int ch = (i / fp32_per_ch) % num_ch_C;

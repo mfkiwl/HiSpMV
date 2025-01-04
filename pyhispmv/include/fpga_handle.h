@@ -67,7 +67,13 @@ public:
     void selectMatrix(const uint32_t matrix_idx);
 
     // Run SpMV kenrel with given input/output vectors and scalars 
-    double runKernel(const py::array_t<float>& x, 
+    void runKernel(const py::array_t<float>& x, 
+          const py::array_t<float>& bias, 
+          py::array_t<float>& y,
+        const float alpha, const float beta);
+    
+    // Run  multiple SpMV kenrels with given input/output vectors and scalars (essentially SpMM)
+    void runKernels(const py::array_t<float>& x, 
           const py::array_t<float>& bias, 
           py::array_t<float>& y,
         const float alpha, const float beta);

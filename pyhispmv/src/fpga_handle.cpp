@@ -122,7 +122,7 @@ int FpgaHandle::createSparseMtxHandle(
         dense_overlay, pre_accumulator, row_dist_net);
 
     double prep_time = sparse_handle->prepareSparseMtxForFPGA(rows, cols, rows_vec, cols_vec, values_vec);
-    std::cout << "Sparse matrix preparation completed in " << prep_time << " ms.\n";
+    std::cout << "Sparse matrix preparation completed in " << prep_time << " ns.\n";
 
     // Get prepared data
     auto& prep_data = sparse_handle->getPreparedMtx();
@@ -165,7 +165,7 @@ int FpgaHandle::createDenseMtxHandle(
         dense_overlay, pre_accumulator, row_dist_net);
 
     double prep_time = dense_handle->prepareDenseMtxForFPGA(rows, cols, dense_values);
-    std::cout << "Dense matrix preparation completed in " << prep_time << " ms.\n";
+    std::cout << "Dense matrix preparation completed in " << prep_time << " ns.\n";
 
     // Get prepared data
     auto& prep_data = dense_handle->getPreparedMtx();
@@ -251,14 +251,13 @@ xrt::bo FpgaHandle::_setOutputBuffer(void* host_aligned_ptr, uint32_t buffer_siz
     return device_buffer;
 }
 
-double FpgaHandle::runKernel(
+void FpgaHandle::runKernel(
     const py::array_t<float>& x_arr, 
     const py::array_t<float>& bias_arr, 
     py::array_t<float>& y_arr,
     const float alpha, const float beta) 
 {
     assert(selected_matrix != -1 && "Run Kernel called before selecting a matrix");
-    auto start_cpu = std::chrono::steady_clock::now();
     int arg_num = num_ch_A;
 
     // Get raw data pointer and construct std::vector for x (input vector)
@@ -276,7 +275,7 @@ double FpgaHandle::runKernel(
 
     // Prepare input vectors for all channels using the prepared method
     auto input_vectors_x = handle->prepareInputVector(x_vec);
-    auto input_vectors_bias = handle->prepareInputVector(bias_vec);
+    auto input_vectors_bias = handle->prepareBiasVector(bias_vec);
 
     // Set the input buffers for all channels for x (num_ch_B) and bias (num_ch_C)
     // Moving input data (x)
@@ -326,57 +325,35 @@ double FpgaHandle::runKernel(
         int addr = (i / (fp32_per_ch * num_ch_C)) * fp32_per_ch + (i % fp32_per_ch);
         y_ptr[i] = output_vectors_y[ch][addr];  // Assign the value using calculated index
     }
-
-    auto end_cpu = std::chrono::steady_clock::now();
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(end_cpu - start_cpu).count();
 }
 
-// double FpgaHelper::runKernel(
-//     std::vector<aligned_vector<float>>& B, 
-//     std::vector<aligned_vector<float>>& Cin,
-//     std::vector<aligned_vector<float>>& Cout,
-//     const float alpha, const float beta) 
-// {
-//     auto start_cpu = std::chrono::steady_clock::now();
-//     int arg_num = num_ch_A;
-    
-//     // Move B data from host to fpga
-//     for(int i = 0; i < num_ch_B; i++) {
-//         uint32_t buffer_size = B[i].size() * sizeof(float);
-//         float* host_ptr = B[i].data();
+void FpgaHandle::runKernels(
+    const py::array_t<float>& x_arr,
+    const py::array_t<float>& bias_arr,
+    py::array_t<float>& y_arr,
+    const float alpha, const float beta)
+{
+    assert(selected_matrix != -1 && "Run Kernels called before selecting a matrix");
 
-//         // Copy data from host memory to device buffer
-//         _setInputBuffer(host_ptr, buffer_size, arg_num++);
-//     }
+    // Get raw data pointers and dimensions for x (input matrix) and y (output matrix)
+    auto x = x_arr.request();
+    auto* x_data_ptr = static_cast<float*>(x.ptr);
+    size_t num_vecs = x.shape[0]; // Outer dimension
+    size_t num_cols = x.shape[1]; // Inner dimension
 
-//     // Move C data from host to fpga
-//     for(int i = 0; i < num_ch_C; i++) {
-//         uint32_t buffer_size = Cin[i].size() * sizeof(float);
-//         float* host_ptr = Cin[i].data();
+    auto y = y_arr.request();
+    auto* y_data_ptr = static_cast<float*>(y.ptr);
+    size_t num_rows = y.shape[1];
 
-//         // Copy data from host memory to device buffer
-//         _setInputBuffer(host_ptr, buffer_size, arg_num++);
-//     }
+    // Iterate over each row of the input matrix
+    for (size_t i = 0; i < num_vecs; i++) {
+        // Create a view for the current row of x
+        py::array_t<float> x_vec({static_cast<pybind11::ssize_t>(num_cols)}, x_data_ptr + i * num_cols);
 
-//     // Add C out to args
-//     std::vector<xrt::bo> output_buffers;
-//     for(int i = 0; i < num_ch_C; i++) {
-//         uint32_t buffer_size = Cout[i].size() * sizeof(float);
-//         float* host_ptr = Cout[i].data();
-//         output_buffers.push_back(_setOutputBuffer(host_ptr, buffer_size, arg_num++));
-//     }
+        // Create a view for the corresponding row of y
+        py::array_t<float> y_vec({static_cast<pybind11::ssize_t>(num_rows)}, y_data_ptr + i * num_rows);
 
-//     run.set_arg(arg_num++, alpha);
-//     run.set_arg(arg_num++, beta);
-
-
-//     run.start();
-//     run.wait();
-
-//     for(int i = 0; i < num_ch_C; i++) {
-//         auto device_buffer = output_buffers[i];
-//         device_buffer.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-//     }
-//     auto end_cpu = std::chrono::steady_clock::now();
-//     return std::chrono::duration_cast<std::chrono::nanoseconds>(end_cpu - start_cpu).count();
-// }
+        // Call the existing runKernel for the current row
+        this->runKernel(x_vec, bias_arr, y_vec, alpha, beta);
+    }
+}
