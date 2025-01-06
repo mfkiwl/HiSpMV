@@ -47,12 +47,13 @@ class FpgaLayerManager:
         new_model = model.__class__(model.config) if hasattr(model, 'config') else model.__class__()
         for name, module in model.named_modules():
             if isinstance(module, (nn.Linear, Conv1D)):
-                print(name)
-                handle_idx, bias = self.process_weights(module)
                 layers = name.split(".")
                 target_layer = new_model
                 for layer in layers[:-1]:
                     target_layer = getattr(target_layer, layer)
+                print("\n", "="*50)
+                print(name, ": ", getattr(target_layer, layers[-1]))
+                handle_idx, bias = self.process_weights(module)
                 setattr(target_layer, layers[-1], self.custom_linear_class(self.fpga, handle_idx, bias))
         self.fpga.load_matrices()
         return new_model
