@@ -803,7 +803,6 @@ void HiSpmvHandle::printErrorStats(const std::vector<float>& cpu_ref, const std:
 std::vector<aligned_vector<float>> HiSpmvHandle::prepareInputVector(const float* b) {
     // assert(b.size() == cols && "Expected input vector to match col dimension of the matrix");
     std::vector<aligned_vector<float>>fpgaBinVect(num_ch_B, aligned_vector<float>(padded_cols/num_ch_B, 0));
-#pragma omp parallel for
     for (int i = 0; i < cols; i++) {
         int ch = (i / fp32_per_ch) % num_ch_B;
         int addr = (i / (fp32_per_ch * num_ch_B)) * fp32_per_ch + (i % fp32_per_ch);
@@ -815,7 +814,6 @@ std::vector<aligned_vector<float>> HiSpmvHandle::prepareInputVector(const float*
 std::vector<aligned_vector<float>> HiSpmvHandle::prepareBiasVector(const float* c_in) {
     // assert(c_in.size() == rows && "Expected bias vector to match row dimension of the matrix");
     std::vector<aligned_vector<float>>fpgaCinVect(num_ch_C, aligned_vector<float>(padded_rows/num_ch_C, 0));
-#pragma omp parallel for
     for (int i = 0; i < rows; i++) {
         int ch = (i / fp32_per_ch) % num_ch_C;
         int addr = (i / (fp32_per_ch * num_ch_C)) * fp32_per_ch + (i % fp32_per_ch);
@@ -833,7 +831,6 @@ std::vector<float> HiSpmvHandle::collectOutputVector(const std::vector<aligned_v
     assert(fpgaCoutVect.size() == num_ch_C && "Output Channels doesn't match the expected value");
     assert(fpgaCoutVect[0].size() == (padded_rows/num_ch_C) && "Ouput Size doesn't match the expected size");
     std::vector<float> c_out(rows);
-#pragma omp parallel for
     for (int i = 0; i < rows; i++) {
         int ch = (i / fp32_per_ch) % num_ch_C;
         int addr = (i / (fp32_per_ch * num_ch_C)) * fp32_per_ch + (i % fp32_per_ch);

@@ -1,10 +1,47 @@
 #include "fpga_handle.h"
 
+inline void fill(const float* src, std::vector<xrt::bo>& dst, size_t src_size) {
+    auto num_ch = dst.size();
+    size_t count = src_size / FpgaHandle::FP32_PER_CH;  // Number of 16-element chunks
+
+    // Copy full FP32_PER_CH chunks
+    for (size_t i = 0; i < count; ++i) {
+        auto* dst_ptr = dst[i%num_ch].map<float*>() + (i / num_ch) * FpgaHandle::FP32_PER_CH;
+        std::memcpy(dst_ptr, src + i * FpgaHandle::FP32_PER_CH, FpgaHandle::FP32_PER_CH * sizeof(float));  // Copy 16 elements
+    }
+
+    // Copy remaining elements one by one
+    for (size_t i = count * FpgaHandle::FP32_PER_CH; i < src_size; ++i) {
+        int addr = (i / FpgaHandle::FP32_PER_CH / num_ch) * FpgaHandle::FP32_PER_CH + (i % FpgaHandle::FP32_PER_CH);
+        auto* dst_ptr = dst[i%num_ch].map<float*>();
+        dst_ptr[addr] = src[i];
+    }
+}
+
+
+inline void fill(std::vector<xrt::bo>& src, float* dst, size_t dst_size) {
+    auto num_ch = src.size();
+    size_t count = dst_size / FpgaHandle::FP32_PER_CH;  // Number of 16-element chunks
+
+    // Copy full FP32_PER_CH chunks
+    for (size_t i = 0; i < count; ++i) {
+        auto* src_ptr = src[i%num_ch].map<float*>() + (i / num_ch) * FpgaHandle::FP32_PER_CH;
+        std::memcpy(dst + i * FpgaHandle::FP32_PER_CH, src_ptr, FpgaHandle::FP32_PER_CH * sizeof(float));  // Copy 16 elements
+    }
+
+    // Copy remaining elements one by one
+    for (size_t i = count * FpgaHandle::FP32_PER_CH; i < dst_size; ++i) {
+        int addr = (i / FpgaHandle::FP32_PER_CH / num_ch) * FpgaHandle::FP32_PER_CH + (i % FpgaHandle::FP32_PER_CH);
+        auto* src_ptr = src[i%num_ch].map<float*>();
+        dst[i] = src_ptr[addr];
+    }
+}
+
 FpgaHandle::FpgaHandle(
     const std::string& xclbin_path,
     int id,
     int a, int b, int c,
-    int width, int urams, int fp_acc_latency,
+    int urams, int fp_acc_latency,
     bool dense, bool pre_acc, bool row_dist)
 {
     try {
@@ -54,15 +91,11 @@ FpgaHandle::FpgaHandle(
     num_ch_A = a;
     num_ch_B = b;
     num_ch_C = c;
-    ch_width = width;
     urams_per_pe = urams;
     this->fp_acc_latency = fp_acc_latency;
     dense_overlay = dense;
     pre_accumulator = pre_acc;
     row_dist_net = row_dist;
-
-    pes_per_ch = ch_width / 64;
-    fp32_per_ch = ch_width / 32;
 
     // Hold -1 here to indicate a matrix is not selected
     selected_matrix = -1;
@@ -71,23 +104,48 @@ FpgaHandle::FpgaHandle(
     mtx_handles.clear();
     mtx_offsets.clear();
     mtx_buffers.clear();
-
+    in_buffers.clear();
+    bias_buffers.clear();
+    out_buffers.clear();
     // Initialize first matrix offset is always 0
     mtx_offsets.push_back(0);
 
     // Instantiate device buffers for all A channels
-    for (int i = 0; i < num_ch_A; i++) {
-        xrt::bo device_buffer = xrt::bo(device, (uint32_t)MAX_BUFFER_SIZE_BYTES, krnl.group_id(i));
+    int arg_num = 0;
+    for (int i = 0; i < num_ch_A; i++, arg_num++) {
+        xrt::bo device_buffer = xrt::bo(device, (uint32_t)MAX_BUFFER_SIZE_BYTES, krnl.group_id(arg_num));
         mtx_buffers.push_back(device_buffer);
+        run.set_arg(arg_num, device_buffer);
     }
     std::cout << "Matrix buffers for A channels created successfully.\n";
 
+    for (int i = 0; i < num_ch_B; i++, arg_num++) {
+        xrt::bo device_buffer = xrt::bo(device, (uint32_t)MAX_BUFFER_SIZE_BYTES, krnl.group_id(arg_num));
+        in_buffers.push_back(device_buffer);
+        run.set_arg(arg_num, device_buffer);
+    }
+    std::cout << "Vector buffers for B channels created successfully.\n";
 
+    for (int i = 0; i < num_ch_C; i++, arg_num++) {
+        xrt::bo device_buffer = xrt::bo(device, (uint32_t)MAX_BUFFER_SIZE_BYTES, krnl.group_id(arg_num));
+        bias_buffers.push_back(device_buffer);
+        run.set_arg(arg_num, device_buffer);
+    }
+    std::cout << "Vector buffers for C in channels created successfully.\n";
+
+    for (int i = 0; i < num_ch_C; i++, arg_num++) {
+        xrt::bo device_buffer = xrt::bo(device, (uint32_t)MAX_BUFFER_SIZE_BYTES, krnl.group_id(arg_num));
+        out_buffers.push_back(device_buffer);
+        run.set_arg(arg_num, device_buffer);
+    }
+    std::cout << "Vector buffers for C out channels created successfully.\n";
+
+    // Allocate memory for input, output and bias buffers before hand
     std::cout << "FPGA handle initialized with configuration:\n"
               << "  num_ch_A: " << num_ch_A << "\n"
               << "  num_ch_B: " << num_ch_B << "\n"
               << "  num_ch_C: " << num_ch_C << "\n"
-              << "  ch_width: " << ch_width << "\n"
+              << "  ch_width: " << CH_WIDTH << "\n"
               << "  urams_per_pe: " << urams_per_pe << "\n"
               << "  fp_acc_latency: " << fp_acc_latency << "\n"
               << "  dense_overlay: " << (dense_overlay ? "true" : "false") << "\n"
@@ -118,7 +176,7 @@ int FpgaHandle::createSparseMtxHandle(
     // Create and prepare sparse matrix
     auto* sparse_handle = new HiSpmvHandle(
         num_ch_A, num_ch_B, num_ch_C, 
-        ch_width, urams_per_pe, fp_acc_latency, 
+        CH_WIDTH, urams_per_pe, fp_acc_latency, 
         dense_overlay, pre_accumulator, row_dist_net);
 
     double prep_time = sparse_handle->prepareSparseMtxForFPGA(rows, cols, rows_vec, cols_vec, values_vec);
@@ -161,7 +219,7 @@ int FpgaHandle::createDenseMtxHandle(
     // Create and prepare dense matrix
     auto* dense_handle = new HiSpmvHandle(
         num_ch_A, num_ch_B, num_ch_C, 
-        ch_width, urams_per_pe, fp_acc_latency, 
+        CH_WIDTH, urams_per_pe, fp_acc_latency, 
         dense_overlay, pre_accumulator, row_dist_net);
 
     double prep_time = dense_handle->prepareDenseMtxForFPGA(rows, cols, dense_values);
@@ -197,14 +255,9 @@ void FpgaHandle::loadMatrices() {
         mtx_buffers[i].sync(XCL_BO_SYNC_BO_TO_DEVICE);
     }
 
-    // Set the buffers as arguments for the kernel
-    for (int i = 0; i < num_ch_A; i++) {
-        run.set_arg(i, mtx_buffers[i]);
-    }
-
     // Convert offset size to offset length
     for (auto& offset : mtx_offsets) {
-        offset /= pes_per_ch * sizeof(uint64_t);  
+        offset /= PES_PER_CH * sizeof(uint64_t);  
     }
     
     std::cout << "Matrix data successfully synced to the device." << std::endl;
@@ -230,27 +283,6 @@ void FpgaHandle::selectMatrix(const uint32_t matrix_idx) {
 }
 
 
-void FpgaHandle::_setInputBuffer(void* host_aligned_ptr, uint32_t buffer_size, const int arg_num) {
-    // Allocate memory on the device memory
-    xrt::bo device_buffer = xrt::bo(device, host_aligned_ptr, buffer_size, xrt::bo::flags::device_only, krnl.group_id(arg_num));
-
-    // Sync buffer to device
-    device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-
-    // Set the buffer to appropriate argument number
-    run.set_arg(arg_num, device_buffer); 
-}
-
-xrt::bo FpgaHandle::_setOutputBuffer(void* host_aligned_ptr, uint32_t buffer_size, const int arg_num) {
-    // Allocate memory on the device memory
-    xrt::bo device_buffer = xrt::bo(device, host_aligned_ptr, buffer_size, krnl.group_id(arg_num));
-
-    // Set the buffer to appropriate argument number
-    run.set_arg(arg_num, device_buffer); 
-
-    return device_buffer;
-}
-
 void FpgaHandle::runKernel(
     const py::array_t<float>& x_arr, 
     const py::array_t<float>& bias_arr, 
@@ -258,102 +290,97 @@ void FpgaHandle::runKernel(
     const float alpha, const float beta) 
 {
     assert(selected_matrix != -1 && "Run Kernel called before selecting a matrix");
-    int arg_num = num_ch_A;
-
-    // Get raw data pointer and construct std::vector for x (input vector)
-    auto x = x_arr.request();
-    auto* x_data_ptr = static_cast<float*>(x.ptr);
-    std::vector<float> x_vec(x_data_ptr, x_data_ptr + x.shape[0]);
-
-    // Get raw data pointer and construct std::vector for bias
-    auto bias = bias_arr.request();
-    auto* bias_data_ptr = static_cast<float*>(bias.ptr);
-    std::vector<float> bias_vec(bias_data_ptr, bias_data_ptr + bias.shape[0]);
-
-    // get the handle for selected matrix
     auto* handle = mtx_handles[selected_matrix];
+    auto [rows, cols] = handle->getMatrixDims();
+    auto [pad_rows, pad_cols] = handle->getPaddedMatrixDims();
+    auto row_buf_size = (pad_rows / num_ch_C) * sizeof(float);
+    auto col_buf_size = (pad_cols / num_ch_B) * sizeof(float);
 
-    // Prepare input vectors for all channels using the prepared method
-    auto input_vectors_x = handle->prepareInputVector(x_vec);
-    auto input_vectors_bias = handle->prepareBiasVector(bias_vec);
+    auto x = x_arr.request();
+    const auto* x_ptr = static_cast<const float*>(x.ptr);
+    auto bias = bias_arr.request();
+    const auto* bias_ptr = static_cast<const float*>(bias.ptr);
+    auto y = y_arr.request();
+    float* y_ptr = static_cast<float*>(y.ptr);
 
-    // Set the input buffers for all channels for x (num_ch_B) and bias (num_ch_C)
-    // Moving input data (x)
-    for (int i = 0; i < num_ch_B; i++) {
-        uint32_t buffer_size_x = input_vectors_x[i].size() * sizeof(float);
-        _setInputBuffer(input_vectors_x[i].data(), buffer_size_x, arg_num++);
-    }
+    fill(x_ptr, in_buffers, cols);
+    for(auto& bo: in_buffers) bo.sync(XCL_BO_SYNC_BO_TO_DEVICE, col_buf_size, 0);
 
-    // Moving bias data (num_ch_C)
-    for (int i = 0; i < num_ch_C; i++) {
-        uint32_t buffer_size_bias = input_vectors_bias[i].size() * sizeof(float);
-        _setInputBuffer(input_vectors_bias[i].data(), buffer_size_bias, arg_num++);
-    }
+    fill(bias_ptr, bias_buffers, rows);
+    for(auto& bo: bias_buffers) bo.sync(XCL_BO_SYNC_BO_TO_DEVICE, row_buf_size, 0);
 
-    // Prepare output vector y
-    auto output_vectors_y = handle->allocateOutputVector();
-
-    // Prepare output buffers for each channel (num_ch_C output buffers)
-    std::vector<xrt::bo> output_buffers;
-
-    // Allocate output buffers for each channel
-    for (int i = 0; i < num_ch_C; i++) {
-        uint32_t y_buffer_size = output_vectors_y[i].size() * sizeof(float);
-        auto device_buffer_y = _setOutputBuffer(output_vectors_y[i].data(), y_buffer_size, arg_num++);
-        output_buffers.push_back(device_buffer_y);
-    }
-
-    // Set alpha and beta scalars to kernel arguments
+    int arg_num = num_ch_A + num_ch_B + 2*num_ch_C;
     run.set_arg(arg_num++, alpha);
     run.set_arg(arg_num++, beta);
 
-    // Start the kernel execution
     run.start();
     run.wait();
 
-    // Sync the output buffers from device to host
-    for (int i = 0; i < num_ch_C; i++) {
-        output_buffers[i].sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-    }
-
-    // This assumes that `output_vectors_y` holds the results in a channel-wise format.
-    auto y = y_arr.request();
-    auto* y_ptr = static_cast<float*>(y.ptr);
-
-    for (int i = 0; i < y.shape[0]; i++) {
-        int ch = (i / fp32_per_ch) % num_ch_C;
-        int addr = (i / (fp32_per_ch * num_ch_C)) * fp32_per_ch + (i % fp32_per_ch);
-        y_ptr[i] = output_vectors_y[ch][addr];  // Assign the value using calculated index
-    }
+    for(auto& bo: out_buffers) bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE, row_buf_size, 0);
+    fill(out_buffers, y_ptr, rows);
 }
 
-void FpgaHandle::runKernels(
-    const py::array_t<float>& x_arr,
-    const py::array_t<float>& bias_arr,
-    py::array_t<float>& y_arr,
-    const float alpha, const float beta)
-{
-    assert(selected_matrix != -1 && "Run Kernels called before selecting a matrix");
+py::array_t<float> FpgaHandle::runLinear(const int matrix_idx, const py::array_t<float>& x_arr, const py::array_t<float>& bias_arr) {
+    // get the handle for selected matrix
+    assert(matrix_idx != -1 && "Run Kernels called before selecting a matrix");
+    auto* handle = mtx_handles[matrix_idx];
+    auto [rows, cols] = handle->getMatrixDims();
+    auto [pad_rows, pad_cols] = handle->getPaddedMatrixDims();
+    auto row_buf_size = (pad_rows / num_ch_C) * sizeof(float);
+    auto col_buf_size = (pad_cols / num_ch_B) * sizeof(float);
 
-    // Get raw data pointers and dimensions for x (input matrix) and y (output matrix)
     auto x = x_arr.request();
-    auto* x_data_ptr = static_cast<float*>(x.ptr);
-    size_t num_vecs = x.shape[0]; // Outer dimension
-    size_t num_cols = x.shape[1]; // Inner dimension
+    const auto* x_ptr = static_cast<const float*>(x.ptr);
+    auto bias = bias_arr.request();
+    const auto* bias_ptr = static_cast<const float*>(bias.ptr);
+    int num_vecs = x.shape[0] / cols;
 
+    //output array
+    auto y_arr = py::array_t<float>(num_vecs*rows);
     auto y = y_arr.request();
-    auto* y_data_ptr = static_cast<float*>(y.ptr);
-    size_t num_rows = y.shape[1];
+    float* y_ptr = static_cast<float*>(y.ptr);
+    int vec_idx = 0;
 
-    // Iterate over each row of the input matrix
-    for (size_t i = 0; i < num_vecs; i++) {
-        // Create a view for the current row of x
-        py::array_t<float> x_vec({static_cast<pybind11::ssize_t>(num_cols)}, x_data_ptr + i * num_cols);
+    fill(x_ptr + (vec_idx * cols), in_buffers, cols);
+    for(auto& bo: in_buffers) bo.sync(XCL_BO_SYNC_BO_TO_DEVICE, col_buf_size, 0);
 
-        // Create a view for the corresponding row of y
-        py::array_t<float> y_vec({static_cast<pybind11::ssize_t>(num_rows)}, y_data_ptr + i * num_rows);
+    fill(bias_ptr, bias_buffers, rows);
+    for(auto& bo: bias_buffers) bo.sync(XCL_BO_SYNC_BO_TO_DEVICE, row_buf_size, 0);
 
-        // Call the existing runKernel for the current row
-        this->runKernel(x_vec, bias_arr, y_vec, alpha, beta);
+    int arg_num = num_ch_A + num_ch_B + 2*num_ch_C;
+    run.set_arg(arg_num++, 1.0f);
+    run.set_arg(arg_num++, 1.0f);
+    run.set_arg(arg_num++, mtx_offsets[matrix_idx]);
+    run.set_arg(arg_num++, handle->getRunLength()); 
+    run.set_arg(arg_num++, handle->getRowsPerPE());
+    run.set_arg(arg_num++, handle->getVectLength());
+    run.set_arg(arg_num++, handle->getRowTiles());
+    run.set_arg(arg_num++, handle->getColTiles());
+    run.set_arg(arg_num++, handle->getTotTiles());
+    run.set_arg(arg_num++, (uint32_t)1); // repeat time
+    run.set_arg(arg_num++, handle->isDense());
+
+    run.start();
+    
+    // Enter this loop only if the num_vecs is greater than 1 
+    for (vec_idx = 1; vec_idx < num_vecs; vec_idx++) {
+        fill(x_ptr + (vec_idx * cols), in_buffers, cols);
+
+        run.wait();
+
+        for(auto& bo: out_buffers) bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE, row_buf_size, 0);
+        for(auto& bo: in_buffers) bo.sync(XCL_BO_SYNC_BO_TO_DEVICE, col_buf_size, 0);
+
+        run.start();
+
+        fill(out_buffers, y_ptr + (vec_idx - 1) * rows, rows);
     }
+
+    // stop the run and collect the final output vec_idx = 1 in case of single vec or num_vecs if multiple vecs
+    run.wait();
+
+    for(auto& bo: out_buffers) bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE, row_buf_size, 0);
+    fill(out_buffers, y_ptr + (vec_idx - 1) * rows, rows);
+
+    return y_arr;  // Return the output py arr
 }

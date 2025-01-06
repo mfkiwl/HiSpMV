@@ -5,10 +5,10 @@ PYBIND11_MODULE(pyhispmv, m) {
 
     py::class_<FpgaHandle>(m, "FpgaHandle")
         // Constructor
-        .def(py::init<const std::string&, int, int, int, int, int, int, int, bool, bool, bool>(),
+        .def(py::init<const std::string&, int, int, int, int, int, int, bool, bool, bool>(),
              py::arg("xclbin_path"), py::arg("device_id"),
              py::arg("num_ch_A"), py::arg("num_ch_B"), py::arg("num_ch_C"),
-             py::arg("ch_width"), py::arg("urams_per_pe"), py::arg("fp_acc_latency"),
+             py::arg("urams_per_pe"), py::arg("fp_acc_latency"),
              py::arg("dense_overlay"), py::arg("pre_accumulator"), py::arg("row_dist_net"))
         
         // Method to create matrix handle for dense matrix
@@ -32,9 +32,9 @@ PYBIND11_MODULE(pyhispmv, m) {
         .def("run_kernel", &FpgaHandle::runKernel,
              py::arg("x"), py::arg("bias"), py::arg("y"), py::arg("alpha"), py::arg("beta"),
              "Runs the SpMV kernel with the provided input/output vectors and scalars")
-
-        // Method to run the kernel
-        .def("run_kernels", &FpgaHandle::runKernels,
-             py::arg("x"), py::arg("bias"), py::arg("y"), py::arg("alpha"), py::arg("beta"),
-             "Runs the SpMM kernel with the provided input/output vectors and scalars");
+     
+       // Method to run the kernel
+        .def("linear", &FpgaHandle::runLinear,
+             py::arg("matrix_idx"), py::arg("x"), py::arg("bias"), 
+             "Run SpMV for given input tensors in a flattened np arrays");
 }
