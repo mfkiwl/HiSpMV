@@ -18,6 +18,9 @@ from timer_layer import measure_execution_time
 current_dir = Path(__file__).resolve().parent
 parent_dir = current_dir.parents[0]
 
+# Limit PyTorch to a single thread
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 
 def main():
     # Initialize the GPT-2 XL language model head
@@ -48,7 +51,7 @@ def main():
 
 
     # Initialize the FPGA handle
-    xclbin_path = os.path.join(parent_dir, "builds/Dense-HiSpMV-24-1-1/SpMV_xilinx_u280_gen3x16_xdma_1_202211_1.xclbin")
+    xclbin_path = os.path.join(parent_dir, "builds/Dense-HI-SpMV-24-1-1/SpMV_xilinx_u280_gen3x16_xdma_1_202211_1.xclbin")
     device_id = 0  # Example device ID
     num_ch_A = 24
     num_ch_B = 1
