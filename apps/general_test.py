@@ -3,16 +3,15 @@ import pyhispmv  # Import the compiled C++ module
 import time
 import os
 from pathlib import Path
-
+from scipy.sparse import coo_matrix
 # Get the current file's directory
 current_dir = Path(__file__).resolve().parent
 parent_dir = current_dir.parents[0]
-xclbin_path = os.path.join(parent_dir, "builds/Dense-HiSpMV-24-1-1/SpMV_xilinx_u280_gen3x16_xdma_1_202211_1.xclbin")
+xclbin_path = os.path.join(parent_dir, "builds/Dense-HI-SpMV-24-1-1/SpMV_xilinx_u280_gen3x16_xdma_1_202211_1.xclbin")
 device_id = 0  # Example device ID
 num_ch_A = 24
 num_ch_B = 1
 num_ch_C = 1
-ch_width = 512
 urams_per_pe = 2
 fp_acc_latency = 5
 dense_overlay = True
@@ -22,44 +21,46 @@ row_dist_net = True
 # Create an FpgaHandle object
 fpga = pyhispmv.FpgaHandle(
     xclbin_path, device_id, num_ch_A, num_ch_B, num_ch_C, 
-    ch_width, urams_per_pe, fp_acc_latency, dense_overlay, pre_accumulator, row_dist_net
+    urams_per_pe, fp_acc_latency, dense_overlay, pre_accumulator, row_dist_net
 )
 
 # Generate a very large dense matrix for testing
-rows, cols = 10000, 10000
+rows, cols = 50000, 10000
 dense_values = np.random.rand(rows, cols).astype(np.float32)  # Dense matrix of size 10000x10000
 x = np.random.rand(cols).astype(np.float32)  # Input vector (10000 elements)
 bias = np.random.rand(rows).astype(np.float32)  # Bias vector (10000 elements)
 y_dense = np.zeros(rows, dtype=np.float32)  # Output vector for dense matrix (10000 elements)
 
-# Create a dense matrix handle
-dense_handle_idx = fpga.create_dense_handle(dense_values.flatten(), rows, cols)
-
-# Create the expected output using NumPy (Python computation)
+#Create the expected output using NumPy (Python computation)
 start_time = time.time()
 y_dense_expected = np.dot(dense_values, x) + bias  # Expected result from NumPy computation
 end_time = time.time()
-print(f"Dense matrix computation time (NumPy): {end_time - start_time:.2f} seconds")
+print(f"Dense matrix computation time (NumPy): {end_time - start_time:.4f} seconds")
 
 # Generate a very large sparse matrix for testing (COO format)
-nnz = 100000  # Number of non-zero elements
+nnz = 1000000  # Number of non-zero elements
 coo_rows = np.random.randint(0, rows, size=nnz, dtype=np.int32)
 coo_cols = np.random.randint(0, cols, size=nnz, dtype=np.int32)
 coo_values = np.random.rand(nnz).astype(np.float32)  # Sparse values (non-zero)
 
-# Create a sparse matrix handle
-sparse_handle_idx = fpga.create_sparse_handle(coo_rows, coo_cols, coo_values, rows, cols)
-
 # Create the expected output for the sparse matrix (NumPy computation)
 y_sparse = np.zeros(rows, dtype=np.float32)  # Output vector for sparse matrix (10000 elements)
-y_sparse_expected = np.zeros(rows, dtype=np.float32)  # Output vector for sparse matrix (10000 elements)
 # Compute the expected result for sparse matrix multiplication (using NumPy)
+
+# Create the sparse matrix using COO format
+sparse_matrix = coo_matrix((coo_values, (coo_rows, coo_cols)), shape=(rows, cols))
 start_time = time.time()
-for i in range(nnz):
-    y_sparse_expected[coo_rows[i]] += coo_values[i] * x[coo_cols[i]]
+y_sparse_expected = sparse_matrix.dot(x)  # Fast and optimized in SciP
 y_sparse_expected += bias  # Adding bias
 end_time = time.time()
-print(f"Sparse matrix computation time (NumPy): {end_time - start_time:.2f} seconds")
+print(f"Sparse matrix computation time (NumPy): {end_time - start_time:.4f} seconds")
+
+
+# Create a dense matrix handle
+dense_handle_idx = fpga.create_dense_handle(dense_values.flatten(), rows, cols)
+
+# Create a sparse matrix handle
+sparse_handle_idx = fpga.create_sparse_handle(coo_rows, coo_cols, coo_values, rows, cols)
 
 # Load both dense and sparse matrices onto the FPGA (only once)
 fpga.load_matrices()
