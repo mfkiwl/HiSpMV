@@ -695,12 +695,20 @@ uint32_t HiSpmvHandle::getRowsPerPE() {
     return rows_per_pe;
 }
 
-uint32_t HiSpmvHandle::getVectLength() {
+uint32_t HiSpmvHandle::getInputLength() {
     return b_len;
+}
+
+uint32_t HiSpmvHandle::getOutputLength() {
+    return (rows_per_pe * num_pes) / fp32_per_ch / num_ch_C;
 }
 
 uint32_t HiSpmvHandle::getRunLength() {
     return prep_mtx[0].size()/pes_per_ch;
+}
+
+uint32_t HiSpmvHandle::getTotalCycles() {
+    return (getRunLength() + b_len) * row_tiles + getOutputLength();
 }
 
 const std::vector<aligned_vector<uint64_t>> HiSpmvHandle::getPreparedMtx() {
@@ -837,4 +845,98 @@ std::vector<float> HiSpmvHandle::collectOutputVector(const std::vector<aligned_v
         c_out[i] = fpgaCoutVect[ch][addr];
     }    
     return c_out;
+}
+
+double HiSpmvHandle::fpgaRun(const std::string& xclbin_path, const int id, 
+    std::vector<aligned_vector<float>>& fpgaBinVect, 
+    std::vector<aligned_vector<float>>& fpgaCinVect, 
+    const float alpha, const float beta, 
+    const uint16_t rp_time, 
+    std::vector<aligned_vector<float>>& fpgaCoutVect) 
+{
+    xrt::device dev;
+    xrt::kernel krnl;
+    xrt::run run;
+    std::string bdf;
+
+    // Initialize board and kernel
+    try {
+        std::cout << "Opening the device with id: " << id << std::endl;
+        dev = xrt::device(id);
+
+        std::cout << "Device name: " << dev.get_info<xrt::info::device::name>() << "\n";
+        bdf = dev.get_info<xrt::info::device::bdf>();
+        std::cout << "Device BDF: " << bdf << "\n";
+
+        std::cout << "Loading the xclbin: " << xclbin_path << std::endl;
+        auto uuid = dev.load_xclbin(xclbin_path);
+
+        std::cout << "Initializing kernel: SpMV\n";
+        krnl = xrt::kernel(dev, uuid, "SpMV", xrt::kernel::cu_access_mode::exclusive);
+        run = xrt::run(krnl);
+    } catch (const std::runtime_error& e) {
+        std::cerr << "Runtime Error" << e.what() << "\n";
+        std::exit(EXIT_FAILURE);
+    } catch (const std::exception& e) {
+        std::cerr << "Exception : " << e.what() << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    // Set all the arguments
+    int arg_num = 0;
+
+    // set A 
+    for (int i = 0; i < num_ch_A; i++, arg_num++) {
+        auto buffer_size = prep_mtx[i].size() * sizeof(uint64_t);
+        xrt::bo device_buffer = xrt::bo(dev, prep_mtx[i].data(), buffer_size, krnl.group_id(arg_num));
+        device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        run.set_arg(arg_num, device_buffer);
+    }
+
+    // set B
+    for (int i = 0; i < num_ch_B; i++, arg_num++) {
+        auto buffer_size = fpgaBinVect[i].size() * sizeof(float);
+        xrt::bo device_buffer = xrt::bo(dev, fpgaBinVect[i].data(), buffer_size, krnl.group_id(arg_num));
+        device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        run.set_arg(arg_num, device_buffer);
+    }
+
+    // set C in
+    for (int i = 0; i < num_ch_C; i++, arg_num++) {
+        auto buffer_size = fpgaCinVect[i].size() * sizeof(float);
+        xrt::bo device_buffer = xrt::bo(dev, fpgaCinVect[i].data(), buffer_size, krnl.group_id(arg_num));
+        device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+        run.set_arg(arg_num, device_buffer);
+    }
+
+    // set C out
+    std::vector<xrt::bo> out_buffers;
+    for (int i = 0; i < num_ch_C; i++, arg_num++) {
+        auto buffer_size = fpgaCoutVect[i].size() * sizeof(float);
+        xrt::bo device_buffer = xrt::bo(dev, fpgaCoutVect[i].data(), buffer_size, krnl.group_id(arg_num));
+        out_buffers.push_back(device_buffer);
+        run.set_arg(arg_num, device_buffer);
+    }
+
+    run.set_arg(arg_num++, alpha);
+    run.set_arg(arg_num++, beta);
+    run.set_arg(arg_num++, 0U); // offset
+    run.set_arg(arg_num++, getRunLength()); 
+    run.set_arg(arg_num++, getRowsPerPE());
+    run.set_arg(arg_num++, getInputLength());
+    run.set_arg(arg_num++, getRowTiles());
+    run.set_arg(arg_num++, getColTiles());
+    run.set_arg(arg_num++, getTotTiles() * rp_time);
+    run.set_arg(arg_num++, rp_time);
+    run.set_arg(arg_num++, isDense());
+
+    // Only measuring Kernel time ignoring memeory transfer time
+    auto start = std::chrono::steady_clock::now();
+    run.start();
+    run.wait();
+    auto end = std::chrono::steady_clock::now();
+
+    for(auto& bo: out_buffers) bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+
 }

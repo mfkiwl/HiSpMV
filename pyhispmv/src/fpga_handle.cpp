@@ -273,7 +273,7 @@ void FpgaHandle::selectMatrix(const uint32_t matrix_idx) {
     run.set_arg(arg_num++, mtx_offsets[matrix_idx]);
     run.set_arg(arg_num++, handle->getRunLength()); 
     run.set_arg(arg_num++, handle->getRowsPerPE());
-    run.set_arg(arg_num++, handle->getVectLength());
+    run.set_arg(arg_num++, handle->getInputLength());
     run.set_arg(arg_num++, handle->getRowTiles());
     run.set_arg(arg_num++, handle->getColTiles());
     run.set_arg(arg_num++, handle->getTotTiles());
@@ -353,7 +353,7 @@ py::array_t<float> FpgaHandle::runLinear(const int matrix_idx, const py::array_t
     run.set_arg(arg_num++, mtx_offsets[matrix_idx]);
     run.set_arg(arg_num++, handle->getRunLength()); 
     run.set_arg(arg_num++, handle->getRowsPerPE());
-    run.set_arg(arg_num++, handle->getVectLength());
+    run.set_arg(arg_num++, handle->getInputLength());
     run.set_arg(arg_num++, handle->getRowTiles());
     run.set_arg(arg_num++, handle->getColTiles());
     run.set_arg(arg_num++, handle->getTotTiles());
@@ -364,6 +364,7 @@ py::array_t<float> FpgaHandle::runLinear(const int matrix_idx, const py::array_t
     
     // Enter this loop only if the num_vecs is greater than 1 
     for (vec_idx = 1; vec_idx < num_vecs; vec_idx++) {
+        // prepare next input, py_arr to aligned host addr while waiting for run
         fill(x_ptr + (vec_idx * cols), in_buffers, cols);
 
         run.wait();
@@ -373,6 +374,7 @@ py::array_t<float> FpgaHandle::runLinear(const int matrix_idx, const py::array_t
 
         run.start();
 
+        // store current output after launching next run, alighned host ptr to py arr
         fill(out_buffers, y_ptr + (vec_idx - 1) * rows, rows);
     }
 

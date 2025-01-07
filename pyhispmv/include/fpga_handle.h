@@ -2,11 +2,6 @@
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 
-#include <xrt/xrt_device.h>
-#include <experimental/xrt_xclbin.h>
-#include <xrt/xrt_kernel.h>
-#include <xrt/xrt_bo.h>
-
 #include "spmv-helper.h"
 
 namespace py = pybind11;

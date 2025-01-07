@@ -18,6 +18,11 @@
 #include <limits>
 #include <iomanip>
 
+#include <xrt/xrt_device.h>
+#include <experimental/xrt_xclbin.h>
+#include <xrt/xrt_kernel.h>
+#include <xrt/xrt_bo.h>
+
 #define PADDING 1
 
 template <typename T>
@@ -174,8 +179,10 @@ public:
     uint16_t getColTiles();
     uint32_t getTotTiles();
     uint32_t getRowsPerPE();
-    uint32_t getVectLength();
+    uint32_t getInputLength();
+    uint32_t getOutputLength();
     uint32_t getRunLength();
+    uint32_t getTotalCycles();
     const std::vector<aligned_vector<uint64_t>> getPreparedMtx();
     bool isDense();
 
@@ -184,6 +191,9 @@ public:
     
     // Method used to print relative errors histogram 
     void printErrorStats(const std::vector<float>& cpu_ref, const std::vector<float>& fpga_out);
+
+    // Method to run SpMV on FPGA using Xilinx Runtime (XRT)
+    double fpgaRun(const std::string& xclbin_path, const int id, std::vector<aligned_vector<float>>& fpgaBinVect, std::vector<aligned_vector<float>>& fpgaCinVect, float alpha, const float beta, const uint16_t rp_time, std::vector<aligned_vector<float>>& fpgaCoutVect);
 };
 
 #endif
