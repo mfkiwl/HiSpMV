@@ -1,12 +1,15 @@
+SRC_DIR = $(WORK_DIR)/src
+COMMON_DIR = $(PROJECT_DIR)/common
+
 CC = g++
 CFLAGS = -O2 -fopenmp 
-LIBRARIES = -std=c++17 -ltapa -lfrt -lglog -lgflags -lOpenCL -lpthread -lstdc++ -lxrt_coreutil -L"$(CONDA_PREFIX)/lib/" -L"$(XILINX_XRT)/lib"
-INCLUDES = -I"$(XILINX_HLS)/include" -I"$(PROJECT_DIR)/common/include" -I"$(XILINX_XRT)/include"
+LIBRARIES = -std=c++17 -ltapa -lfrt -lglog -lgflags -lOpenCL -lpthread -lxrt_coreutil -L"$(CONDA_PREFIX)/lib/" -L"$(XILINX_XRT)/lib"
+INCLUDES = -I"$(XILINX_HLS)/include" -I"$(COMMON_DIR)/include" -I"$(XILINX_XRT)/include" -I"$(SRC_DIR)"
 DEFINES = -DTAPA_BUFFER_SUPPORT -DTAPA_BUFFER_EXPLICIT_RELEASE 
-SRC_DIR = $(WORK_DIR)/src
+
 
 host: $(SRC_DIR)
-	$(CC) -o $(WORK_DIR)/spmv-host $(CFLAGS) $(SRC_DIR)/*.cpp $(PROJECT_DIR)/common/src/spmv-helper.cpp $(DEFINES) $(LIBRARIES) $(INCLUDES)
+	$(CC) -o $(WORK_DIR)/spmv-host $(CFLAGS) $(SRC_DIR)/spmv.cpp $(COMMON_DIR)/src/spmv-host.cpp $(COMMON_DIR)/src/spmv-helper.cpp $(DEFINES) $(LIBRARIES) $(INCLUDES)
 
 tapa:
 	tapac -o $(WORK_DIR)/spmv.$(platform).hw.xo $(SRC_DIR)/spmv.cpp \

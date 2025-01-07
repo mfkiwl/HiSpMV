@@ -40,7 +40,7 @@ class SpMVCodeGen:
         if os.path.exists(self.build_dir):
             shutil.rmtree(self.build_dir)
 
-        self.copyHostCode()
+        # self.copyHostCode()
         self.createMakefile()
         self.createHwDefsHeader()
         self.copyKernelHeader()
