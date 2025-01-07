@@ -11,8 +11,6 @@ import os
 from pathlib import Path
 
 from transformers import GPT2LMHeadModel
-from utils import LargeSparseModel
-from timer_layer import measure_execution_time
 
 # Get the current file's directory
 current_dir = Path(__file__).resolve().parent
@@ -56,7 +54,6 @@ def main():
     num_ch_A = 24
     num_ch_B = 1
     num_ch_C = 1
-    ch_width = 512
     urams_per_pe = 2
     fp_acc_latency = 5
     dense_overlay = True
@@ -66,7 +63,7 @@ def main():
     # Create an FpgaHandle object
     fpga = FpgaHandle(
         xclbin_path, device_id, num_ch_A, num_ch_B, num_ch_C, 
-        ch_width, urams_per_pe, fp_acc_latency, dense_overlay, pre_accumulator, row_dist_net
+        urams_per_pe, fp_acc_latency, dense_overlay, pre_accumulator, row_dist_net
     )
     fpga_model = FpgaLayerManager(fpga, FpgaLinear).replace_layers(cpu_model)
     # fpga_model = measure_execution_time(cpu_model)

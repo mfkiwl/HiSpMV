@@ -14,5 +14,5 @@ class FpgaLinear(nn.Module):
         self.bias_npy = bias # Bias
 
     def forward(self, x):
-       y = self.fpga.linear(self.matrix_idx, x.view(-1).numpy(), self.bias_npy)
+        y = self.fpga.linear(self.matrix_idx, x.view(-1).numpy(), self.bias_npy)
         return torch.from_numpy(y).view(*x.shape[:-1], self.bias_npy.shape[0])
