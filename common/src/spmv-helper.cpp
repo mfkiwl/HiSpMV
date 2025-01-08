@@ -1,5 +1,5 @@
 #include "spmv-helper.h"
-
+#include "fpga-power.h"
 
 // Constructor implementation
 HiSpmvHandle::HiSpmvHandle(int a, int b, int c, int width, int urams, int fp_acc_latency, bool dense, bool pre_acc, bool row_dist)
@@ -708,7 +708,7 @@ uint32_t HiSpmvHandle::getRunLength() {
 }
 
 uint32_t HiSpmvHandle::getTotalCycles() {
-    return (getRunLength() + b_len) * row_tiles + getOutputLength();
+    return getRunLength() + b_len * row_tiles + getOutputLength();
 }
 
 const std::vector<aligned_vector<uint64_t>> HiSpmvHandle::getPreparedMtx() {
@@ -853,13 +853,13 @@ double HiSpmvHandle::fpgaRun(const std::string& xclbin_path, const int id,
     const float alpha, const float beta, 
     const uint16_t rp_time, 
     std::vector<aligned_vector<float>>& fpgaCoutVect,
-    const int num_samples) 
+    const int num_samples,
+    const int power_s) 
 {
     xrt::device dev;
     xrt::kernel krnl;
     xrt::run run;
     std::string bdf;
-    FpgaPowerMonitor monitor;
 
     // Initialize board and kernel
     try {
@@ -884,177 +884,82 @@ double HiSpmvHandle::fpgaRun(const std::string& xclbin_path, const int id,
         std::exit(EXIT_FAILURE);
     }
 
-    // Set all the arguments
-    int arg_num = 0;
+        // Set all the arguments
+        int arg_num = 0;
 
-    // set A 
-    for (int i = 0; i < num_ch_A; i++, arg_num++) {
-        auto buffer_size = prep_mtx[i].size() * sizeof(uint64_t);
-        xrt::bo device_buffer = xrt::bo(dev, prep_mtx[i].data(), buffer_size, krnl.group_id(arg_num));
-        device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        run.set_arg(arg_num, device_buffer);
-    }
+        // set A 
+        for (int i = 0; i < num_ch_A; i++, arg_num++) {
+            auto buffer_size = prep_mtx[i].size() * sizeof(uint64_t);
+            xrt::bo device_buffer = xrt::bo(dev, prep_mtx[i].data(), buffer_size, krnl.group_id(arg_num));
+            device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            run.set_arg(arg_num, device_buffer);
+        }
 
-    // set B
-    for (int i = 0; i < num_ch_B; i++, arg_num++) {
-        auto buffer_size = fpgaBinVect[i].size() * sizeof(float);
-        xrt::bo device_buffer = xrt::bo(dev, fpgaBinVect[i].data(), buffer_size, krnl.group_id(arg_num));
-        device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        run.set_arg(arg_num, device_buffer);
-    }
+        // set B
+        for (int i = 0; i < num_ch_B; i++, arg_num++) {
+            auto buffer_size = fpgaBinVect[i].size() * sizeof(float);
+            xrt::bo device_buffer = xrt::bo(dev, fpgaBinVect[i].data(), buffer_size, krnl.group_id(arg_num));
+            device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            run.set_arg(arg_num, device_buffer);
+        }
 
-    // set C in
-    for (int i = 0; i < num_ch_C; i++, arg_num++) {
-        auto buffer_size = fpgaCinVect[i].size() * sizeof(float);
-        xrt::bo device_buffer = xrt::bo(dev, fpgaCinVect[i].data(), buffer_size, krnl.group_id(arg_num));
-        device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
-        run.set_arg(arg_num, device_buffer);
-    }
+        // set C in
+        for (int i = 0; i < num_ch_C; i++, arg_num++) {
+            auto buffer_size = fpgaCinVect[i].size() * sizeof(float);
+            xrt::bo device_buffer = xrt::bo(dev, fpgaCinVect[i].data(), buffer_size, krnl.group_id(arg_num));
+            device_buffer.sync(XCL_BO_SYNC_BO_TO_DEVICE);
+            run.set_arg(arg_num, device_buffer);
+        }
 
-    // set C out
-    std::vector<xrt::bo> out_buffers;
-    for (int i = 0; i < num_ch_C; i++, arg_num++) {
-        auto buffer_size = fpgaCoutVect[i].size() * sizeof(float);
-        xrt::bo device_buffer = xrt::bo(dev, fpgaCoutVect[i].data(), buffer_size, krnl.group_id(arg_num));
-        out_buffers.push_back(device_buffer);
-        run.set_arg(arg_num, device_buffer);
-    }
+        // set C out
+        std::vector<xrt::bo> out_buffers;
+        for (int i = 0; i < num_ch_C; i++, arg_num++) {
+            auto buffer_size = fpgaCoutVect[i].size() * sizeof(float);
+            xrt::bo device_buffer = xrt::bo(dev, fpgaCoutVect[i].data(), buffer_size, krnl.group_id(arg_num));
+            out_buffers.push_back(device_buffer);
+            run.set_arg(arg_num, device_buffer);
+        }
 
-    run.set_arg(arg_num++, alpha);
-    run.set_arg(arg_num++, beta);
-    run.set_arg(arg_num++, 0U); // offset
-    run.set_arg(arg_num++, getRunLength()); 
-    run.set_arg(arg_num++, getRowsPerPE());
-    run.set_arg(arg_num++, getInputLength());
-    run.set_arg(arg_num++, getRowTiles());
-    run.set_arg(arg_num++, getColTiles());
-    run.set_arg(arg_num++, getTotTiles() * rp_time);
-    run.set_arg(arg_num++, rp_time);
-    run.set_arg(arg_num++, isDense());
+        run.set_arg(arg_num++, alpha);
+        run.set_arg(arg_num++, beta);
+        run.set_arg(arg_num++, 0U); // offset
+        run.set_arg(arg_num++, getRunLength()); 
+        run.set_arg(arg_num++, getRowsPerPE());
+        run.set_arg(arg_num++, getInputLength());
+        run.set_arg(arg_num++, getRowTiles());
+        run.set_arg(arg_num++, getColTiles());
+        run.set_arg(arg_num++, getTotTiles() * rp_time);
+        run.set_arg(arg_num++, rp_time);
+        run.set_arg(arg_num++, isDense());
 
-    // Only measuring Kernel time ignoring memeory transfer time
+        
+    double total = 0;
     std::cout << "Kernel Launched" << std::endl;
-    monitor.startMonitoring(bdf, true);
-    auto start = std::chrono::steady_clock::now();
-    for (int n = 0; n < num_samples; n++) {    
+    FpgaPowerMonitor monitor;
+    if (power_s) monitor.startMonitoring(id, true);
+    for(int i = 0; i < num_samples; i++) {
+        // Only measuring Kernel time ignoring memeory transfer time
+        auto start = std::chrono::steady_clock::now();
         run.start();
         run.wait(); 
+        auto end = std::chrono::steady_clock::now();
+        total += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+        for(auto& bo: out_buffers) bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
     }
-    auto end = std::chrono::steady_clock::now();
-    monitor.stopMonitoring();
+    if (power_s) monitor.stopMonitoring();
     std::cout << "Kernel Finished" << std::endl;
 
-    size_t numSamples = 0;
-    double avgPower = monitor.getAveragePower(numSamples);
-    float maxPower = monitor.getMaxPower();
+    if (power_s) {
+      size_t numSamples = 0;
+      double avgPower = monitor.getAveragePower(numSamples);
+      float maxPower = monitor.getMaxPower();
 
-    std::cout << "Average Power: " << avgPower << " Watts\n";
-    std::cout << "Max Power: " << maxPower << " Watts\n";
-    std::cout << "Number of Samples: " << numSamples << std::endl;
+      std::cout << "Average Power: " << avgPower << " Watts\n";
+      std::cout << "Max Power: " << maxPower << " Watts\n";
+      std::cout << "Number of Samples: " << numSamples << std::endl;
+    }
 
-    for(auto& bo: out_buffers) bo.sync(XCL_BO_SYNC_BO_FROM_DEVICE);
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() / num_samples;
+    return total/num_samples;
 
 }
 
-FpgaPowerMonitor::FpgaPowerMonitor() 
-    : isMonitoring(false), debug(false) {}
-
-FpgaPowerMonitor::~FpgaPowerMonitor() {
-    if (isMonitoring) {
-        stopMonitoring();
-    }
-}
-
-void FpgaPowerMonitor::startMonitoring(const std::string& deviceID, bool debugMode) {
-    if (isMonitoring) {
-        std::cerr << "Monitoring is already running!" << std::endl;
-        return;
-    }
-    isMonitoring = true;
-    device = deviceID;
-    debug = debugMode;
-
-    monitoringThread = std::thread(&FpgaPowerMonitor::monitorPower, this);
-}
-
-void FpgaPowerMonitor::stopMonitoring() {
-    if (!isMonitoring) {
-        std::cerr << "Monitoring is not running!" << std::endl;
-        return;
-    }
-
-    isMonitoring = false;
-    if (monitoringThread.joinable()) {
-        monitoringThread.join();
-    }
-}
-
-float FpgaPowerMonitor::getAveragePower(size_t& numSamples) const {
-    std::lock_guard<std::mutex> lock(dataMutex);
-    numSamples = powerSamples.size(); // Get the number of samples
-
-    if (numSamples == 0) {
-        return 0.0f; // Avoid division by zero
-    }
-
-    // Compute the sum of all samples
-    float totalPower = 0.0f;
-    for (const float& sample : powerSamples) {
-        // Print the sample if debug mode is enabled
-        if (debug) {
-            std::cout << "Power Sample: " << sample << " Watts" << std::endl;
-        }
-        totalPower += sample;
-    }
-    return totalPower / numSamples;
-}
-
-void FpgaPowerMonitor::monitorPower() {
-    while (isMonitoring) {
-        // Execute the command and parse the power value
-        std::string command = "xbutil examine -d " + device + " -r electrical";
-        std::string output = executeCommand(command);
-        float power = parsePower(output);
-
-        std::lock_guard<std::mutex> lock(dataMutex);
-        powerSamples.push_back(power); // Store the power sample
-    }
-}
-
-std::string FpgaPowerMonitor::executeCommand(const std::string& command) {
-    std::array<char, 128> buffer;
-    std::string result;
-    FILE* pipe = popen(command.c_str(), "r");
-    if (!pipe) {
-        std::cerr << "Error executing command!" << std::endl;
-        return "";
-    }
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-        result += buffer.data();
-    }
-    pclose(pipe);
-    return result;
-}
-
-float FpgaPowerMonitor::parsePower(const std::string& output) {
-    std::istringstream stream(output);
-    std::string line;
-    while (std::getline(stream, line)) {
-        if (line.find("Power                  :") != std::string::npos) {
-            std::string value = line.substr(line.find(':') + 1);
-            return std::stof(value); // Convert to float
-        }
-    }
-    return -1.0f; // Return -1 if the power field is not found
-}
-
-float FpgaPowerMonitor::getMaxPower() const {
-    std::lock_guard<std::mutex> lock(dataMutex);
-
-    if (powerSamples.empty()) {
-        return 0.0f; // No samples, return 0 as default
-    }
-
-    return *std::max_element(powerSamples.begin(), powerSamples.end());
-}

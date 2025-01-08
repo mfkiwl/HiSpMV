@@ -17,12 +17,8 @@
 #include <cmath>
 #include <limits>
 #include <iomanip>
-#include <cstdlib>
-#include <array>
+#include <thread> 
 #include <chrono>
-#include <thread>
-#include <atomic>
-#include <mutex>
 
 #include <xrt/xrt_device.h>
 #include <experimental/xrt_xclbin.h>
@@ -62,30 +58,6 @@ inline uint64_t encode(bool tileEnd, bool rowEnd, bool sharedRow, uint16_t row, 
     res |= val; //32 bits val
     return res;
 }
-
-class FpgaPowerMonitor {
-public:
-    FpgaPowerMonitor();
-    ~FpgaPowerMonitor();
-
-    void startMonitoring(const std::string& deviceID, bool debugMode = false);
-    void stopMonitoring();
-    float getAveragePower(size_t& numSamples) const;
-    float getMaxPower() const; 
-
-private:
-    void monitorPower();
-    std::string executeCommand(const std::string& command);
-    float parsePower(const std::string& output);
-
-    std::atomic<bool> isMonitoring;
-    std::thread monitoringThread;
-    std::string device;
-    mutable std::mutex dataMutex;
-
-    std::vector<float> powerSamples; // Store individual power samples
-    bool debug; // Flag for debug mode
-};
 
 class HiSpmvHandle {
 private:
@@ -223,7 +195,7 @@ public:
     void printErrorStats(const std::vector<float>& cpu_ref, const std::vector<float>& fpga_out);
 
     // Method to run SpMV on FPGA using Xilinx Runtime (XRT)
-    double fpgaRun(const std::string& xclbin_path, const int id, std::vector<aligned_vector<float>>& fpgaBinVect, std::vector<aligned_vector<float>>& fpgaCinVect, float alpha, const float beta, const uint16_t rp_time, std::vector<aligned_vector<float>>& fpgaCoutVect, const int num_power_samples = 1);
+    double fpgaRun(const std::string& xclbin_path, const int id, std::vector<aligned_vector<float>>& fpgaBinVect, std::vector<aligned_vector<float>>& fpgaCinVect, float alpha, const float beta, const uint16_t rp_time, std::vector<aligned_vector<float>>& fpgaCoutVect, const int num_samples, const int power_s);
 };
 
 #endif

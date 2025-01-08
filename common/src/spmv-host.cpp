@@ -11,6 +11,8 @@ using namespace std;
 
 DEFINE_string(bitstream, "", "path to bitstream file, run csim if empty");
 DEFINE_string(device, "", "xilinx fpga device id");
+DEFINE_string(exec_ms, "1", "specify execution time for GFLOPs benchmarking in ms");
+DEFINE_string(power_s, "0", "specify execution time for Power in Seconds");
 
 vector<float> generateVector(int size) {
     vector<float> vec(size);
@@ -116,20 +118,43 @@ int main(int argc, char* argv[]) {
       cerr << "Please specify --device = <device id> when running xclbin" << endl;
       return 1;
     }
+
     int device_id = stoi(FLAGS_device);
     if (device_id < 0) {
       cerr << "Invlid Device ID: " << device_id << endl;
       return 1;
     }
 
-    cout << endl << "Computing on FPGA..."  << endl;
-    // It takes about 3 secs to get power data from xbutil
-    uint32_t rp_time = (FREQ / handle.getTotalCycles()) * 3;
-    uint16_t max_rp_time = numeric_limits<uint16_t>::max();
-    uint16_t safe_rp_time = (rp_time > max_rp_time) ? max_rp_time : static_cast<uint16_t>(rp_time);
-    cout << "Using Repeat Time: " << safe_rp_time << endl;
+    int exec_ms = stoi(FLAGS_exec_ms);
+    if (exec_ms <= 0) {
+      cerr << "Invlid exec time: " << exec_ms << endl;
+      return 1;
+    }
 
-    double time_fpga_ns = handle.fpgaRun(FLAGS_bitstream, device_id, fpgaBinVect, fpgaCinVect, alpha, beta, rp_time, fpgaCoutVect, 50);
+    int power_s = stoi(FLAGS_power_s);
+    if (power_s < 0) {
+      cerr << "Invlid power time: " << power_s << endl;
+      return 1;
+    }
+
+    // Set rp_time to run to appropriate value to make it matche exec_ms
+    float rp_time = (FREQ / static_cast<float>(handle.getTotalCycles()) / 1000) * exec_ms;
+    uint16_t max_rp_time = 1 << 15;
+
+    //If rp_time is too big to fit in uint16_t call the kernel multiple times
+    uint16_t safe_rp_time = (rp_time > max_rp_time) ? max_rp_time : static_cast<uint16_t>(rp_time);
+    auto num_samples = (static_cast<uint16_t>(rp_time) != safe_rp_time) ? (rp_time / safe_rp_time) : 1.0f; 
+
+    // compute how many execs need to be done run the kernel for power_s secs
+    if (power_s) num_samples *= (power_s * 1000.0 / exec_ms);
+    num_samples = static_cast<int>(num_samples);
+    cout << "Using Repeat Time: " << safe_rp_time << endl;
+    cout << "Using Num samples: " << num_samples << endl;
+
+    cout << endl << "Computing on FPGA..."  << endl;
+    
+    double time_fpga_ns = handle.fpgaRun(FLAGS_bitstream, device_id, fpgaBinVect, fpgaCinVect, alpha, beta, safe_rp_time, fpgaCoutVect, num_samples, power_s);
+    
     cout << "Total Kernel Runtime: " << time_fpga_ns * 1e-6 << "ms \n";
     time_fpga_ns /= safe_rp_time;
     cout << "FPGA TIME: " << time_fpga_ns * 1e-3 << "us \n";

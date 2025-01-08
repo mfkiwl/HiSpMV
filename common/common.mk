@@ -9,7 +9,7 @@ DEFINES = -DTAPA_BUFFER_SUPPORT -DTAPA_BUFFER_EXPLICIT_RELEASE
 
 
 host: $(SRC_DIR)
-	$(CC) -o $(WORK_DIR)/spmv-host $(CFLAGS) $(SRC_DIR)/spmv.cpp $(COMMON_DIR)/src/spmv-host.cpp $(COMMON_DIR)/src/spmv-helper.cpp $(DEFINES) $(LIBRARIES) $(INCLUDES)
+	$(CC) -o $(WORK_DIR)/spmv-host $(CFLAGS) $(SRC_DIR)/spmv.cpp $(COMMON_DIR)/src/*.cpp $(DEFINES) $(LIBRARIES) $(INCLUDES)
 
 tapa:
 	tapac -o $(WORK_DIR)/spmv.$(platform).hw.xo $(SRC_DIR)/spmv.cpp \
