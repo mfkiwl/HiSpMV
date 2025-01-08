@@ -36,4 +36,4 @@ private:
     std::vector<float> powerSamples;
     bool debug;
 };
-#endif // FPGA_POWER_MONITOR_HPP
+#endif // FPGA_POWER_MONITOR_H
