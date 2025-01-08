@@ -1,5 +1,5 @@
-#ifndef FPGA_POWER_MONITOR_HPP
-#define FPGA_POWER_MONITOR_HPP
+#ifndef FPGA_POWER_MONITOR_H
+#define FPGA_POWER_MONITOR_H
 
 #include <xrt/xrt_device.h>
 #include <nlohmann/json.hpp>
