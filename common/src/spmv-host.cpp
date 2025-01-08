@@ -123,15 +123,15 @@ int main(int argc, char* argv[]) {
     }
 
     cout << endl << "Computing on FPGA..."  << endl;
-    uint32_t rp_time = FREQ / handle.getTotalCycles();
+    // It takes about 3 secs to get power data from xbutil
+    uint32_t rp_time = (FREQ / handle.getTotalCycles()) * 3;
     uint16_t max_rp_time = numeric_limits<uint16_t>::max();
     uint16_t safe_rp_time = (rp_time > max_rp_time) ? max_rp_time : static_cast<uint16_t>(rp_time);
     cout << "Using Repeat Time: " << safe_rp_time << endl;
 
-    double time_fpga_ns = handle.fpgaRun(FLAGS_bitstream, device_id, fpgaBinVect, fpgaCinVect, alpha, beta, rp_time, fpgaCoutVect);
+    double time_fpga_ns = handle.fpgaRun(FLAGS_bitstream, device_id, fpgaBinVect, fpgaCinVect, alpha, beta, rp_time, fpgaCoutVect, 50);
     cout << "Total Kernel Runtime: " << time_fpga_ns * 1e-6 << "ms \n";
     time_fpga_ns /= safe_rp_time;
-
     cout << "FPGA TIME: " << time_fpga_ns * 1e-3 << "us \n";
     cout << "FPGA GFLOPS: " << 2.0 * (nnz + rows) / time_fpga_ns << "\n";
   }
