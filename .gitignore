@@ -1,8 +1,9 @@
 # Exclude anything inside the "matrices" directory
 matrices/*
-builds/*/spmv*
-builds/*/logs
-builds/*/setup.log
+***spmv
+***spmv-host
+***logs
+***.log
 automation_tool/src/__pycache__
 automation_tool/src/__pycache__/**
 pyhispmv/build**

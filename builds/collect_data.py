@@ -31,7 +31,7 @@ log_files = glob.glob("*/logs/*.log")
 
 # Store extracted data
 metrics_data = []
-samples_data = []
+samples_dict = {}
 incomplete_data = []
 
 for log_file in log_files:
@@ -56,7 +56,7 @@ for log_file in log_files:
     # Extract samples
     sample_matches = re.findall(SAMPLE_PATTERN, content)
     if sample_matches:
-        samples.extend(sample_matches)
+        samples_dict[os.path.basename(log_file)] = list(map(float, sample_matches))
 
     # Handle incomplete and complete logs
     if complete:
@@ -64,21 +64,24 @@ for log_file in log_files:
     else:
         incomplete_data.append(entry)
 
-    # Add samples if available
-    if samples:
-        samples_data.append({"Log File": os.path.basename(log_file), "Samples": ",".join(samples)})
-
 # Write metrics to CSV
 with open(OUTPUT_METRICS, "w", newline="") as csvfile:
     writer = csv.DictWriter(csvfile, fieldnames=["Log File"] + list(METRIC_PATTERNS.keys()))
     writer.writeheader()
     writer.writerows(metrics_data)
 
-# Write samples to CSV
+# Align power samples and write to CSV
+max_samples = max(len(samples) for samples in samples_dict.values())
 with open(OUTPUT_SAMPLES, "w", newline="") as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=["Log File", "Samples"])
-    writer.writeheader()
-    writer.writerows(samples_data)
+    writer = csv.writer(csvfile)
+    # Write header
+    writer.writerow(["Sample Index"] + list(samples_dict.keys()))
+    # Write rows
+    for i in range(max_samples):
+        row = [i + 1]
+        for log_file in samples_dict.keys():
+            row.append(samples_dict[log_file][i] if i < len(samples_dict[log_file]) else None)
+        writer.writerow(row)
 
 # Write incomplete metrics to CSV
 with open(OUTPUT_INCOMPLETE, "w", newline="") as csvfile:
@@ -87,5 +90,5 @@ with open(OUTPUT_INCOMPLETE, "w", newline="") as csvfile:
     writer.writerows(incomplete_data)
 
 print(f"Metrics saved to {OUTPUT_METRICS}")
-print(f"Samples saved to {OUTPUT_SAMPLES}")
+print(f"Power samples saved to {OUTPUT_SAMPLES}")
 print(f"Incomplete metrics saved to {OUTPUT_INCOMPLETE}")
