@@ -112,13 +112,7 @@ int main(int argc, char* argv[]) {
   cout << "Approx. Clock Cycles: " << handle.getTotalCycles() << endl;
 
   // Use XRT to tun on FPGA if using xclbin for hw and hw_emu
-  if (isXclbin(FLAGS_bitstream)) {
-
-    if (FLAGS_device.empty()) {
-      cerr << "Please specify --device = <device id> when running xclbin" << endl;
-      return 1;
-    }
-
+  if (isXclbin(FLAGS_bitstream) && !FLAGS_device.empty()) {
     int device_id = stoi(FLAGS_device);
     if (device_id < 0) {
       cerr << "Invlid Device ID: " << device_id << endl;
