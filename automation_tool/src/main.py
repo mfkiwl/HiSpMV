@@ -19,14 +19,15 @@ def list_mtx_files(directory):
                 mtx_files.append(os.path.join(root, filename))
     return mtx_files
 
-def save_to_csv(file_path: str, config: str, output_csv: str):
+def save_to_csv(file_path: str, config: str, cycle_est: int, output_csv: str):
     # Extract the basename from the file path
     filename = os.path.basename(file_path)
     
     # Prepare data for CSV
     data = {
         "filename": filename,
-        "config": config
+        "config": config,
+        "cycle count": cycle_est
     }
 
     # Write to CSV
@@ -55,8 +56,8 @@ def main(build_dir, fpga, matrices, dense_overlay):
     for mtx_file in matrices:
         logger.info(f"Processing Matrix {count} out of {len(matrices)}")
         best_config = DSE.getBestConfig(mtx_file, fpga, dense_overlay)
-        config_str = encodeSpMVConfig(best_config)
-        save_to_csv(mtx_file, config_str, csv_file)
+        config_str, cycle_est = encodeSpMVConfig(best_config)
+        save_to_csv(mtx_file, config_str, cycle_est, csv_file)
         count += 1
         if config_str not in built_configs:
             build_path = os.path.join(build_dir, config_str)

@@ -38,8 +38,8 @@ class DSE():
 
         logger.info(f"Optimal Channels: A={opt_ch_A}, B={opt_ch_B}, C={opt_ch_C}")
 
-        ch_b_limit = max(0, math.ceil(math.log2(opt_ch_B)))
-        ch_c_limit = max(0, math.ceil(math.log2(opt_ch_B)))
+        ch_b_limit = max(0, math.ceil(math.log2(opt_ch_B))) + 1
+        ch_c_limit = max(0, math.ceil(math.log2(opt_ch_C))) + 1
         # opt_ch_A = min(fpga.hbm.num_ch - opt_ch_B - 2*opt_ch_C, round(opt_ch_A))
 
         logger.info(f"Search Space Limits: B=(0, {1 << ch_b_limit}], C=(0, {1 << ch_c_limit}]")
@@ -99,8 +99,8 @@ class DSE():
         cycles = CycleCountEstimator.getCC(best_config, matrix)
         kernel_time = best_cycles / fpga.hbm.freq
         flops = 2*(matrix.nnz + matrix.shape[0]) / kernel_time
-        logger.debug(f"Cycles: {best_cycles}, Kernel Time: {kernel_time:.3e}, flops: {flops:.2e}")
-        return best_config
+        # logger.info(f"Cycles: {best_cycles}, Kernel Time: {kernel_time:.3e}, flops: {flops:.2e}")
+        return best_config, best_cycles
     
     @staticmethod
     def getSingleBestConfig(fpga: FPGA, dense_overlay: bool = False) -> SpMVConfig:
