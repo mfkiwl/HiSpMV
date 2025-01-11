@@ -338,10 +338,7 @@ std::vector<int> HiSpmvHandle::balanceWorkload(const CSRMatrix_t& csr_matrix)
     #endif
     
     int tile_load = csr_matrix.row_offsets.back();
-    float original_imb = (max_pe_load * num_pes) / tile_load;
-    float improved_imb = (best_load * num_pes) / tile_load;
-
-    int improvement = (int)((original_imb - improved_imb) * 100);
+    float improvement = (max_pe_load != 0) ? (max_pe_load - best_load) * 100.0f / max_pe_load : 0;
     
     if (improvement < 10)
         removed_rows.clear();
