@@ -70,18 +70,23 @@ class SpMVCodeGen:
             for line in lines:
                 file.write(line)
 
-    def copyHostCode(self):
+    # def copyHostCode(self):
+    #     src_dir = os.path.join(self.build_dir, "src")
+
+    #     if not os.path.exists(src_dir):
+    #         os.makedirs(src_dir)
+
+    #     file = 'spmv-host.cpp'
+    #     cp_src_file = os.path.join(self.asset_dir, file)
+    #     cp_dst_file = os.path.join(src_dir, file)
+    #     shutil.copy(cp_src_file, cp_dst_file)
+
+    def createMakefile(self):
         src_dir = os.path.join(self.build_dir, "src")
 
         if not os.path.exists(src_dir):
             os.makedirs(src_dir)
-
-        file = 'spmv-host.cpp'
-        cp_src_file = os.path.join(self.asset_dir, file)
-        cp_dst_file = os.path.join(src_dir, file)
-        shutil.copy(cp_src_file, cp_dst_file)
-
-    def createMakefile(self):
+            
         makefile_content = f"""
 platform = {self.fpga.platform}
 PROJECT_DIR = {project_dir}
