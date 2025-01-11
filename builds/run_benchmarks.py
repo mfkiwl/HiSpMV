@@ -89,7 +89,7 @@ def process_csv_file(config_file, bitstream, device_id, exec_ms, power_s):
         next(reader)  # Skip the header line
 
         # Populate the dictionary with config names as keys and list of matrix files as values
-        for filename, config in reader:
+        for filename, config, cycle in reader:
             if config not in config_dict:
                 config_dict[config] = []
             config_dict[config].append(filename)
