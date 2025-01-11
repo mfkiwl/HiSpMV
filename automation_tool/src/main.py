@@ -55,8 +55,8 @@ def main(build_dir, fpga, matrices, dense_overlay):
     count = 1
     for mtx_file in matrices:
         logger.info(f"Processing Matrix {count} out of {len(matrices)}")
-        best_config = DSE.getBestConfig(mtx_file, fpga, dense_overlay)
-        config_str, cycle_est = encodeSpMVConfig(best_config)
+        best_config, cycle_est = DSE.getBestConfig(mtx_file, fpga, dense_overlay)
+        config_str = encodeSpMVConfig(best_config)
         save_to_csv(mtx_file, config_str, cycle_est, csv_file)
         count += 1
         if config_str not in built_configs:
