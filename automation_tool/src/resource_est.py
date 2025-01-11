@@ -15,7 +15,7 @@ class ResourceEstimator:
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.MM2S_B(), config.num_ch_B)
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.MM2S_C(), config.num_ch_C)
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.S2MM_C(), config.num_ch_C)
-        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.LoadB(), NUM_PES//2//LOAD_GROUP_SIZE)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.LoadB(), (NUM_PES//2//LOAD_GROUP_SIZE) * config.num_ch_B)
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.ComputeAB(config), NUM_PES//2)
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.PreAccumulator(config), NUM_PES//2)
         
@@ -39,7 +39,7 @@ class ResourceEstimator:
         myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(16, FIFO_DEPTH, NUM_PES)) #c_row
         myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(32, FIFO_DEPTH, NUM_PES)) #c_val
         myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(3, FIFO_DEPTH, NUM_PES//2)) #c_flag
-        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(config.ch_width, FIFO_DEPTH, config.num_ch_A + 1)) #b_in
+        myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(config.ch_width, FIFO_DEPTH, ((NUM_PES//2//LOAD_GROUP_SIZE) + 1) * config.num_ch_B)) #b_in
         myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(60, FIFO_DEPTH, NUM_PES//2)) #noc_in
         if config.row_dist_net:
             myResource = ResourceEstimator.add(myResource, ResourceEstimator.Streams(16, FIFO_DEPTH, NUM_PES)) #noc_out
