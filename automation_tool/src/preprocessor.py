@@ -117,6 +117,10 @@ class PreProcessor():
                 best_load = balanced_load
                 intra_mode_rows = curr_removed_rows
 
+        improvement = 0 if tile_max== 0 else np.float32(tile_max - best_load) * 100.0 / np.float32(tile_max)
+        # print(tile_max, best_load, improvement)
+        if improvement < 10:
+            intra_mode_rows = []
         return np.array(intra_mode_rows, dtype=np.int32), best_load
                 
 
