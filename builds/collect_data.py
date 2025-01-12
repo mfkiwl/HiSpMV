@@ -2,6 +2,7 @@ import os
 import glob
 import re
 import csv
+import argparse
 
 # Define the regex patterns for the required metrics
 METRIC_PATTERNS = {
@@ -21,74 +22,75 @@ METRIC_PATTERNS = {
 
 SAMPLE_PATTERN = r"sample: ([\d\.]+)"
 
-# Initialize CSV file paths
-OUTPUT_METRICS = "u280_metrics.csv"
-OUTPUT_SAMPLES = "u280_power_samples.csv"
-OUTPUT_INCOMPLETE = "u50_metrics.csv"
+def process_logs(fpga):
+    # File output names based on FPGA target
+    output_metrics = f"{fpga}_metrics.csv"
+    output_samples = f"{fpga}_power_samples.csv"
 
-# Collect all logs
-log_files = glob.glob("*/logs/*.log")
+    # Collect all logs
+    log_files = glob.glob("*/logs/*.log")
 
-# Store extracted data
-metrics_data = []
-samples_dict = {}
-incomplete_data = []
+    # Store extracted data
+    metrics_data = []
+    samples_dict = {}
 
-for log_file in log_files:
-    # Initialize log entry
-    entry = {"Log File": os.path.basename(log_file)}
-    samples = []
+    for log_file in log_files:
+        # Initialize log entry
+        entry = {"Log File": os.path.basename(log_file)}
+        samples = []
 
-    # Read the log file
-    with open(log_file, "r") as f:
-        content = f.read()
+        # Read the log file
+        with open(log_file, "r") as f:
+            content = f.read()
 
-    # Extract metrics
-    complete = True
-    for metric, pattern in METRIC_PATTERNS.items():
-        match = re.search(pattern, content)
-        if match:
-            entry[metric] = match.group(1)
-        else:
-            entry[metric] = None
-            complete = False
+        # Extract metrics
+        for metric, pattern in METRIC_PATTERNS.items():
+            match = re.search(pattern, content)
+            entry[metric] = match.group(1) if match else None
 
-    # Extract samples
-    sample_matches = re.findall(SAMPLE_PATTERN, content)
-    if sample_matches:
-        samples_dict[os.path.basename(log_file)] = list(map(float, sample_matches))
+        # Extract samples
+        sample_matches = re.findall(SAMPLE_PATTERN, content)
+        if sample_matches:
+            samples_dict[os.path.basename(log_file)] = list(map(float, sample_matches))
 
-    # Handle incomplete and complete logs
-    if complete:
+        # Append metrics to data
         metrics_data.append(entry)
+
+    # Write metrics to CSV
+    with open(output_metrics, "w", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=["Log File"] + list(METRIC_PATTERNS.keys()))
+        writer.writeheader()
+        writer.writerows(metrics_data)
+
+    print(f"Metrics saved to {output_metrics}")
+
+    # Align power samples and write to CSV (only if samples are available)
+    if samples_dict:
+        max_samples = max(len(samples) for samples in samples_dict.values())
+        with open(output_samples, "w", newline="") as csvfile:
+            writer = csv.writer(csvfile)
+            # Write header
+            writer.writerow(["Sample Index"] + list(samples_dict.keys()))
+            # Write rows
+            for i in range(max_samples):
+                row = [i + 1]
+                for log_file in samples_dict.keys():
+                    row.append(samples_dict[log_file][i] if i < len(samples_dict[log_file]) else None)
+                writer.writerow(row)
+        print(f"Power samples saved to {output_samples}")
     else:
-        incomplete_data.append(entry)
+        print("No power samples found. Skipping power samples CSV creation.")
 
-# Write metrics to CSV
-with open(OUTPUT_METRICS, "w", newline="") as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=["Log File"] + list(METRIC_PATTERNS.keys()))
-    writer.writeheader()
-    writer.writerows(metrics_data)
+def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Process FPGA metrics and power samples.")
+    parser.add_argument(
+        "fpga", choices=["U50", "U280"], help="Specify the target FPGA: 'U50' or 'U280'."
+    )
+    args = parser.parse_args()
 
-# Align power samples and write to CSV
-max_samples = max(len(samples) for samples in samples_dict.values())
-with open(OUTPUT_SAMPLES, "w", newline="") as csvfile:
-    writer = csv.writer(csvfile)
-    # Write header
-    writer.writerow(["Sample Index"] + list(samples_dict.keys()))
-    # Write rows
-    for i in range(max_samples):
-        row = [i + 1]
-        for log_file in samples_dict.keys():
-            row.append(samples_dict[log_file][i] if i < len(samples_dict[log_file]) else None)
-        writer.writerow(row)
+    # Process logs based on the provided FPGA
+    process_logs(args.fpga)
 
-# Write incomplete metrics to CSV
-with open(OUTPUT_INCOMPLETE, "w", newline="") as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=["Log File"] + list(METRIC_PATTERNS.keys()))
-    writer.writeheader()
-    writer.writerows(incomplete_data)
-
-print(f"Metrics saved to {OUTPUT_METRICS}")
-print(f"Power samples saved to {OUTPUT_SAMPLES}")
-print(f"Incomplete metrics saved to {OUTPUT_INCOMPLETE}")
+if __name__ == "__main__":
+    main()

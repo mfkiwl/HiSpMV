@@ -68,9 +68,15 @@ def process_config_entry(config, bitstream, device_id, exec_ms, power_s, matrix_
         log_file = f"logs/{matrix_name}.log"
 
         # Execute spmv-host command and capture the output
-        spmv_command = (
-            f"./spmv-host {MATRIX_BASE_DIR}/{matrix_name}/{filename} --bitstream=\"{bitstream}\" --device={device_id} --exec_ms={exec_ms} --power_s={power_s}"
-        )
+        if 'u50' in bitstream:
+            # do not specify device id for u50 to run with tapa invoke, xrt has some bug with u50
+            spmv_command = (
+            f"./spmv-host {MATRIX_BASE_DIR}/{matrix_name}/{filename} --bitstream=\"{bitstream}\"  --exec_ms={exec_ms} --power_s={power_s}"
+            )
+        else:
+            spmv_command = (
+                f"./spmv-host {MATRIX_BASE_DIR}/{matrix_name}/{filename} --bitstream=\"{bitstream}\" --device={device_id} --exec_ms={exec_ms} --power_s={power_s}"
+            )
         execute_command(spmv_command, log_file)
 
     # Return to the original directory after processing the matrices
