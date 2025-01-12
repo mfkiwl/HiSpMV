@@ -163,7 +163,7 @@ int main(int argc, char* argv[]) {
       safe_rp_time = 1;
     cout << "Using Repeat Time: " << safe_rp_time << endl;
 
-    tapa::invoke(
+    time_fpga_ns = tapa::invoke(
       SpMV, FLAGS_bitstream, 
       tapa::read_only_mmaps<uint64_t, NUM_A_CH>(fpgaAinMtx).reinterpret<channelA_t>(),
       tapa::read_only_mmaps<float, NUM_B_CH>(fpgaBinVect).reinterpret<channelB_t>(),
