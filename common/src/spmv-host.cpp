@@ -111,17 +111,27 @@ int main(int argc, char* argv[]) {
   cout << "Matrix A Length: " << handle.getRunLength() << endl;
   cout << "Approx. Clock Cycles: " << handle.getTotalCycles() << endl;
 
-  // Use XRT to tun on FPGA if using xclbin for hw and hw_emu
+  int exec_ms = stoi(FLAGS_exec_ms);
+  if (exec_ms <= 0) {
+    cerr << "Invlid exec time: " << exec_ms << endl;
+    return 1;
+  }
+
+  // Set rp_time to run to appropriate value to make it matche exec_ms
+  float rp_time = (FREQ / static_cast<float>(handle.getTotalCycles()) / 1000) * exec_ms;
+  uint16_t max_rp_time = 1 << 15;
+
+  //If rp_time is too big to fit in uint16_t use max_value
+  uint16_t safe_rp_time = (rp_time > max_rp_time) ? max_rp_time : static_cast<uint16_t>(rp_time);
+  
+
+  double time_fpga_ns;
+
+  // Use XRT to tun on FPGA if using xclbin for hw and device is specified
   if (isXclbin(FLAGS_bitstream) && !FLAGS_device.empty()) {
     int device_id = stoi(FLAGS_device);
     if (device_id < 0) {
       cerr << "Invlid Device ID: " << device_id << endl;
-      return 1;
-    }
-
-    int exec_ms = stoi(FLAGS_exec_ms);
-    if (exec_ms <= 0) {
-      cerr << "Invlid exec time: " << exec_ms << endl;
       return 1;
     }
 
@@ -131,12 +141,6 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
-    // Set rp_time to run to appropriate value to make it matche exec_ms
-    float rp_time = (FREQ / static_cast<float>(handle.getTotalCycles()) / 1000) * exec_ms;
-    uint16_t max_rp_time = 1 << 15;
-
-    //If rp_time is too big to fit in uint16_t call the kernel multiple times
-    uint16_t safe_rp_time = (rp_time > max_rp_time) ? max_rp_time : static_cast<uint16_t>(rp_time);
     auto num_samples = (static_cast<uint16_t>(rp_time) != safe_rp_time) ? (rp_time / safe_rp_time) : 1.0f; 
 
     // compute how many execs need to be done run the kernel for power_s secs
@@ -147,16 +151,18 @@ int main(int argc, char* argv[]) {
 
     cout << endl << "Computing on FPGA..."  << endl;
     
-    double time_fpga_ns = handle.fpgaRun(FLAGS_bitstream, device_id, fpgaBinVect, fpgaCinVect, alpha, beta, safe_rp_time, fpgaCoutVect, num_samples, power_s);
-    
-    cout << "Total Kernel Runtime: " << time_fpga_ns * 1e-6 << "ms \n";
-    time_fpga_ns /= safe_rp_time;
-    cout << "FPGA TIME: " << time_fpga_ns * 1e-3 << "us \n";
-    cout << "FPGA GFLOPS: " << 2.0 * (nnz + rows) / time_fpga_ns << "\n";
+    time_fpga_ns = handle.fpgaRun(FLAGS_bitstream, device_id, fpgaBinVect, fpgaCinVect, alpha, beta, safe_rp_time, fpgaCoutVect, num_samples, power_s);
+
   }
 
-  // Use TAPA invoke for csim and fast-cosim
+  // Use TAPA invoke for csim and fast-cosim, and HW if device not specified
   else {
+
+    // Dont repeat kernel if not executong on hardware
+    if (!isXclbin(FLAGS_bitstream))
+      safe_rp_time = 1;
+    cout << "Using Repeat Time: " << safe_rp_time << endl;
+
     tapa::invoke(
       SpMV, FLAGS_bitstream, 
       tapa::read_only_mmaps<uint64_t, NUM_A_CH>(fpgaAinMtx).reinterpret<channelA_t>(),
@@ -167,8 +173,16 @@ int main(int argc, char* argv[]) {
       0, handle.getRunLength(),
       handle.getRowsPerPE(), handle.getInputLength(),
       handle.getRowTiles(), handle.getColTiles(),
-      handle.getTotTiles(), 1,
+      handle.getTotTiles() * safe_rp_time, safe_rp_time,
       handle.isDense());
+  }
+
+  // Print GFLOPS only when running on Hardware
+  if (isXclbin(FLAGS_bitstream)) {
+    cout << "Total Kernel Runtime: " << time_fpga_ns * 1e-6 << "ms \n";
+    time_fpga_ns /= safe_rp_time;
+    cout << "FPGA TIME: " << time_fpga_ns * 1e-3 << "us \n";
+    cout << "FPGA GFLOPS: " << 2.0 * (nnz + rows) / time_fpga_ns << "\n";
   }
 
   cout <<  endl << "Comparing Results... "  << endl;
