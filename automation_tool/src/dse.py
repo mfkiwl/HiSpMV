@@ -48,7 +48,14 @@ class DSE():
         for c in [1 << i for i in range(ch_c_limit + 1)]:
             for b in [1 << i for i in range(ch_b_limit + 1)]:
                 for row_dist_net in [False, True]:
-                    for pre_accumulator in [False, True]:
+                    # when using Versal boards pre-acumulators are not needed
+                    # Assume there is a pre-accumulator even though it is not needed
+                    # this helps get the accurate cycle count
+                    # resource of pre-accumulator task will be set to 0
+                    choices = [True, False]
+                    if fpga.series =='Versal':
+                        choices = [True]
+                    for pre_accumulator in choices:
                         a = fpga.hbm.num_ch - b - 2*c
                         if (a < 1):
                             continue
