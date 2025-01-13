@@ -8,6 +8,7 @@ class ResourceEstimator:
 
         NUM_PES = config.num_ch_A * config.ch_width // 64
         FIFO_DEPTH = 2
+        #PEs per PEG aka ComputeAB
         LOAD_GROUP_SIZE = 2
         
         #Resource of tapa::tasks
@@ -16,16 +17,16 @@ class ResourceEstimator:
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.MM2S_C(), config.num_ch_C)
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.S2MM_C(), config.num_ch_C)
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.LoadB(), (NUM_PES//2//LOAD_GROUP_SIZE) * config.num_ch_B)
-        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.ComputeAB(config), NUM_PES//2)
-        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.PreAccumulator(config), NUM_PES//2)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.ComputeAB(config, fpga), NUM_PES//2)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.PreAccumulator(config, fpga), NUM_PES//2)
         
         if config.row_dist_net:
-            myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.ADD_Blocks(), NUM_PES)  
+            myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.ADD_Blocks(fpga), NUM_PES)  
             myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.SW_Blocks(), 2*(NUM_PES - 3))
         
-        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.AccumBuffer(config), NUM_PES)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.AccumBuffer(config, fpga), NUM_PES)
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.Arbitter_C(), 1)
-        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.Compute_C(config), config.num_ch_C)
+        myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.Compute_C(config, fpga), config.num_ch_C)
 
         #Async MMAP
         myResource = ResourceEstimator.scale_and_accumulate(myResource, ResourceEstimator.Async_MMAP(config), config.num_ch_A + config.num_ch_B + 2*config.num_ch_C)
@@ -99,38 +100,83 @@ class ResourceEstimator:
         return FPGAResource(bram=0, uram=0, dsp=0, lut=240, reg=245)
     
     @staticmethod
-    def ComputeAB(config):
+    def ComputeAB(config, fpga):
         if config.dense_overlay:
-            return FPGAResource(bram=0, uram=0, dsp=16, lut=1410, reg=1740)
+            #2fmuls + 1fadd 
+            if fpga.sereies == 'Ultrascale+':
+                #1fmul = 3 dsps x 2, 1fadd = 2dsps: total 8dsps x 2 PE
+                return FPGAResource(bram=0, uram=0, dsp=16, lut=1410, reg=1740)
+            elif fpga.sereies == 'Versal':
+                #1fmul + 1fadd = 1 dsp + #1fmul = 1dsp: total 2dsp x 2PE
+                return FPGAResource(bram=0, uram=0, dsp=4, lut=1410, reg=1740)
+            else:
+                raise ValueError(f"Unknown FPGA Sereies {fpga.series}")
         else:
-            return FPGAResource(bram=0, uram=0, dsp=6, lut=553, reg=740)
+            if fpga.sereies == 'Ultrascale+':
+                #1fmul x 2PEs = 6dsps
+                return FPGAResource(bram=0, uram=0, dsp=6, lut=553, reg=740)
+            elif fpga.sereies == 'Versal':
+                #1fmul x 2pes = 2 dsps
+                return FPGAResource(bram=0, uram=0, dsp=2, lut=553, reg=740)
+            else:
+                raise ValueError(f"Unknown FPGA Sereies {fpga.series}")
     
     @staticmethod
-    def PreAccumulator(config):
+    def PreAccumulator(config, fpga):
+        #Versal is always set to use pre_accum, but that resource will be set to 0
         if config.pre_accumulator:
-            return FPGAResource(bram=0, uram=0, dsp=16, lut=2100, reg=2000)
+            if fpga.sereies == 'Ultrascale+':
+                return FPGAResource(bram=0, uram=0, dsp=16, lut=2100, reg=2000)
+            elif fpga.sereies == 'Versal':
+                #Versal don't need pre-accum but it set to true to trick preprocessor to give correct estimate
+                return FPGAResource(bram=0, uram=0, dsp=0, lut=29, reg=125)
+            else:
+                raise ValueError(f"Unknown FPGA Sereies {fpga.series}")
         else:
             return FPGAResource(bram=0, uram=0, dsp=0, lut=29, reg=125)
 
     @staticmethod    
-    def AccumBuffer(config):
+    def AccumBuffer(config, fpga):
         if config.pre_accumulator:
-            return FPGAResource(bram=0, uram=config.urams_per_pe, dsp=3, lut=849, reg=686)
+            if fpga.sereies == 'Ultrascale+':
+                #if using pre-accum use luts for fadd with latency=4 (lowest possible at 225MHz)
+                return FPGAResource(bram=0, uram=config.urams_per_pe, dsp=3, lut=849, reg=686)
+            elif fpga.sereies == 'Versal':
+                #fadd = 1dsp latency of 1
+                return FPGAResource(bram=0, uram=config.urams_per_pe, dsp=4, lut=717, reg=751)
+            else:
+                raise ValueError(f"Unknown FPGA Sereies {fpga.series}")
         else:
+            #if not using pre-accum use extra 2 dsps for fadd with latency=5
             return FPGAResource(bram=0, uram=config.urams_per_pe, dsp=5, lut=717, reg=751)
+            
     
     @staticmethod
-    def Compute_C(config):
+    def Compute_C(config, fpga):
         fp32perch = config.ch_width // 32
-        return FPGAResource(bram=0, uram=0, dsp=8*fp32perch + 2, lut=414*fp32perch+75, reg=587*fp32perch+166)
+        if fpga.sereies == 'Ultrascale+':
+            # 2fmuls + 1fadd = 2 * 3dsps + 2dsps = 8dsps
+            return FPGAResource(bram=0, uram=0, dsp=8*fp32perch + 2, lut=414*fp32perch+75, reg=587*fp32perch+166)
+        elif fpga.sereies == 'Versal':
+            # 2fmuls + 1fadd = 1dsp (fmul + fadd) + 1dsp (fmul) = 2dsps
+            return FPGAResource(bram=0, uram=0, dsp=2*fp32perch + 2, lut=414*fp32perch+75, reg=587*fp32perch+166)
+        else:
+            raise ValueError(f"Unknown FPGA Sereies {fpga.series}")
     
     @staticmethod
     def Arbitter_C():
         return FPGAResource(bram=0, uram=0, dsp=2, lut=1000, reg=1000)
     
     @staticmethod
-    def ADD_Blocks():
-        return FPGAResource(bram=0, uram=0, dsp=2, lut=485, reg=407)
+    def ADD_Blocks(fpga):
+        if fpga.sereies == 'Ultrascale+':
+            # 1fadd = 2dsps
+            return FPGAResource(bram=0, uram=0, dsp=2, lut=485, reg=407)
+        elif fpga.sereies == 'Versal':
+            # 1fadd = 1dsp
+            return FPGAResource(bram=0, uram=0, dsp=1, lut=485, reg=407)
+        else:
+            raise ValueError(f"Unknown FPGA Sereies {fpga.series}")
     
     @staticmethod
     def SW_Blocks():
