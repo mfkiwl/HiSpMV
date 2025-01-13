@@ -1,6 +1,6 @@
 from commons import SpMVConfig, encodeSpMVConfig
 from spmvcodegen import SpMVCodeGen
-from fpgas import U280, U50
+from fpgas import U280, U50, V80
 from dse import DSE
 
 import argparse
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     parser.add_argument('build_dir', type=str, help="The path to the build directory.")
 
     # Optional argument for the device (U50 or U280)
-    parser.add_argument('--device', choices=['U50', 'U280'], required=True, help="Specify the device, either 'U50' or 'U280'.")
+    parser.add_argument('--device', choices=['U50', 'U280', 'V80'], required=True, help="Specify the device, either 'U50' or 'U280'.")
 
     # Optional argument for matrices (single file or directory)
     parser.add_argument('--matrices', type=str, help="Path to a matrix file or a directory containing matrices.")
@@ -92,6 +92,9 @@ if __name__ == "__main__":
         selected_device = U280
     elif args.device == 'U50':
         selected_device = U50
+    elif args.device == 'V80':
+        logger.warning("V80 is selected the DSE will only provide configuration, source code will not be generated")
+        selected_device = V80
     else:
         logger.error("Invalid device. Choose either 'U50' or 'U280'.")
         sys.exit(1)
