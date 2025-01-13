@@ -39,6 +39,8 @@ class SpMVCodeGen:
     def generateAll(self):
         if self.fpga.series == 'Versal':
             #TODO: Need to add support for versal boards yet
+            resource = ResourceEstimator.getDesignResource(self.config, self.fpga)
+            logger.info(f"Resource: {resource}")
             return
         if os.path.exists(self.build_dir):
             shutil.rmtree(self.build_dir)

@@ -9,7 +9,7 @@ U280 = FPGA(
     # But realistically HLS designs can only acheive good frequency if the HBM channels are below 28
     hbm=HBM(num_ch=28, ch_width=512, freq=225_000_000), # HBM Specs 
     platform='xilinx_u280_gen3x16_xdma_1_202211_1',
-    sereies='Ultrascale+'
+    series='Ultrascale+'
 )
 
 U50 = FPGA(
@@ -32,6 +32,7 @@ V80 = FPGA(
     # Refenece https://0x04.net/~mwk/xidocs/am/am004-versal-dsp-engine.pdf Figure 33: Floating Point Multiplier and Adder (DSPFP32 Mode)
     available = FPGAResource(bram=3741, uram=1925, dsp=10848,  lut=2574208, reg=5148416), 
     fixed = FPGAResource(bram=195.5, uram=0, dsp=4, lut=107629, reg=136086), # Assume same as U280
+    limit = FPGAResource(bram=0.75, uram=0.5, dsp=0.5, lut=0.70, reg=0.70),
     # HBM has 128b x 16 channels @ 3.2GHz 
     # Assuming Max Kernel Freuency of 400MHz we get 256b x 64 channels @ 400MHz ~= 819.2GBPS
     # Assuming we can use all the ports

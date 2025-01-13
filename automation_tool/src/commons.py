@@ -39,6 +39,7 @@ class FPGA:
     limit: FPGAResource
     hbm: HBM
     platform: str
+    series: str
 
 @dataclass
 class SpMVConfig:
