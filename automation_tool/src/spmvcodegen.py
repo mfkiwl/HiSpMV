@@ -37,6 +37,9 @@ class SpMVCodeGen:
         self.asset_dir = os.path.join(parent_dir, "assets")
 
     def generateAll(self):
+        if self.fpga.series == 'Versal':
+            #TODO: Need to add support for versal boards yet
+            return
         if os.path.exists(self.build_dir):
             shutil.rmtree(self.build_dir)
 
