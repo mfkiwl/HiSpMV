@@ -31,7 +31,7 @@ class SpMVCodeGen:
         self.b_part = (self.config.num_ch_B * self.config.ch_width) // 32 // 2 #BRAM36K 2Ports
         self.b_window = min(self.b_part * 1024, 1 << 14)
         self.w_window = self.b_window // self.b_part // 2
-        self.load_group_size = self.pes_per_ch // 4
+        self.load_group_size = 2
         self.log2_num_pes = int(math.ceil(math.log2(self.num_pes)))
         self.build_dir = build_dir
         self.asset_dir = os.path.join(parent_dir, "assets")
