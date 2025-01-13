@@ -296,7 +296,7 @@ std::vector<int> HiSpmvHandle::balanceWorkload(const CSRMatrix_t& csr_matrix)
     int max_pe_load = pe_workloads.back().second;
 
     #ifdef DEBUGGING
-    std::cout << "Tile: (" << i << ", " << j << ")\t Max PE Workload: "<< max_pe_load << std::endl;
+    std::cout << "Max PE Workload: "<< max_pe_load << std::endl;
     #endif
 
     std::vector<int> removed_rows;
@@ -346,6 +346,85 @@ std::vector<int> HiSpmvHandle::balanceWorkload(const CSRMatrix_t& csr_matrix)
     return removed_rows;
 }
 
+std::vector<int> HiSpmvHandle::oldBalanceWorkload(const CSRMatrix_t& csr_matrix)
+{
+    std::vector<std::pair<int, int>> row_counts(tile_rows, {0, 0});
+    std::vector<std::pair<int, int>> pe_workloads(num_pes, {0, 0});
+
+    for (int ii = 0; ii < tile_rows; ii++) {
+        int pe_idx = ii % num_pes;
+        int row_count = csr_matrix.row_offsets[ii+1] - csr_matrix.row_offsets[ii];
+        row_counts[ii] = {ii, row_count};  // Store as pair
+        pe_workloads[pe_idx].first = pe_idx;
+        pe_workloads[pe_idx].second += row_count;  // Accumulate workload
+    }
+
+    // Sorting row count (second element of the pair) in descinding order
+    std::sort(row_counts.begin(), row_counts.end(),
+        [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+            return a.second > b.second;
+        });
+
+    auto max_pair = *std::max_element(pe_workloads.begin(), pe_workloads.end(), 
+        [](const std::pair<int, int>& a, const std::pair<int, int>& b) {
+            return a.second < b.second;
+        });
+
+    //The load of the pe with max worklaod
+    int max_val = max_pair.second;
+
+    int total = csr_matrix.row_offsets.back();
+    int scheduled = (max_val) * num_pes;
+
+    float imb = (float)(scheduled-total)/total;
+    // std::cout << "Max Load 0 = " << peWorkloads[0][1] << std::endl;
+    // std::cout << "Imbalance Ratio = " << imb << "\tMax Val: " << maxVal << std::endl;
+    int extra_cycles = 0;
+    std::vector<int> removed_rows;
+
+    for(int ii = 0; ii < tile_rows ; ii++) {
+        int new_total = total - row_counts[ii].second;
+        std::vector<std::pair<int, int>> new_pe_workloads = pe_workloads;
+
+        if (max_val < 2)
+            break;
+
+        int new_max_val = 0;
+
+        for (int p = 0; p < num_pes; p++)
+        {
+            if (new_pe_workloads[p].first == (row_counts[ii].first % num_pes))
+                new_pe_workloads[p].second -= row_counts[ii].second;
+
+            if ( new_pe_workloads[p].second > new_max_val) 
+                new_max_val = new_pe_workloads[p].second;
+            
+        }
+    
+        scheduled = num_pes * new_max_val;
+        float new_imb = (float)(scheduled-new_total)/new_total;
+
+        //if imbalance ratio decreases only then remove the row
+        if (((imb - new_imb) > 0) || (ii < 2)) {
+            // printf("Tile [%d][%d] Removed Row: %d Row Count: %d\n", i, j, i*Depth + rowCounts[ii][0], rowCounts[ii][1]);
+            total = new_total;
+            pe_workloads = new_pe_workloads;
+            max_val = new_max_val;
+            extra_cycles += ((row_counts[ii].second - 1)/num_pes) + 1;
+            removed_rows.push_back(row_counts[ii].first);
+        }
+
+        // std::cout << "Imbalance Ratio = " << new_imb << "\tMax Val: " << maxVal << std::endl; 
+
+        //if the change in imbalance is negligible then exit loop
+        if ((std::abs(imb - new_imb) <= 0.01) && (new_imb < 2))
+            break;
+        
+        imb = new_imb;
+    }
+    std::sort(removed_rows.begin(), removed_rows.end());
+    return removed_rows;
+}
 
 int HiSpmvHandle::computeTileSize(const CSRMatrix_t& csr_matrix, const std::vector<int>& shared_rows) 
 {
@@ -583,12 +662,22 @@ double HiSpmvHandle::prepareSparseMtxForFPGA() {
 
     //Determine if we need to process any rows in shared mode and store them
     std::vector<std::vector<std::vector<int>>> shared_rows(row_tiles, std::vector<std::vector<int>>(col_tiles));
+    auto start_balance = std::chrono::steady_clock::now();
     if(row_dist_net && use_row_dist)
 #pragma omp parallel for collapse(2) schedule(dynamic)
         for(int i = 0; i < row_tiles; i++) 
             for(int j = 0; j < col_tiles; j++) 
-                shared_rows[i][j] = std::move(balanceWorkload(tiled_matrices[i][j]));
-    
+                shared_rows[i][j] = use_old_balancing_algorithm ? std::move(oldBalanceWorkload(tiled_matrices[i][j])) : std::move(balanceWorkload(tiled_matrices[i][j]));
+    auto end_balance = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_balance - start_balance).count();
+    std::cout << "Balancing Time: " << duration << " ns" << std::endl;
+
+#ifdef DEBUGGING
+for(int i = 0; i < row_tiles; i++) 
+    for(int j = 0; j < col_tiles; j++) 
+        std::cout << "shared_rows[" << i << "][" << j << "] size: " << shared_rows[i][j].size() << "\n";
+#endif
+
     //Store shared rows 
     for(int i = 0; i < row_tiles; i++) 
         for(int j = 0; j < col_tiles; j++) 

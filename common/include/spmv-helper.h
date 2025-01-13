@@ -132,6 +132,9 @@ private:
     // Method to balance PE workloads and return shared rows
     std::vector<int> balanceWorkload(const CSRMatrix_t& csr_matrix);
 
+    // Method to balance PE workloads and return shared rows (old version)
+    std::vector<int> oldBalanceWorkload(const CSRMatrix_t& csr_matrix);
+
     // Method to compute tile size of a tile
     int computeTileSize(const CSRMatrix_t& csr_matrix, const std::vector<int>& shared_rows);
 
