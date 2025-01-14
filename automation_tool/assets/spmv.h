@@ -13,10 +13,14 @@
 #define FIFO_DEPTH 8
 #endif
 
+#ifdef HIGH_FREQ_DESIGN
+#define FP_ACC_LATENCY 10
+#else
 #ifdef BUILD_PRE_ACCUMULATOR
 #define FP_ACC_LATENCY 4
 #else
 #define FP_ACC_LATENCY 5
+#endif
 #endif
 
 #define PES_PER_CH (CH_WIDTH/64)

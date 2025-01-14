@@ -2,7 +2,7 @@ SRC_DIR = $(WORK_DIR)/src
 COMMON_DIR = $(PROJECT_DIR)/common
 
 CC = g++
-CFLAGS = -O2 -fopenmp 
+CFLAGS = -O2 -fopenmp
 LIBRARIES = -std=c++17 -ltapa -lfrt -lglog -lgflags -lOpenCL -lpthread -lxrt_coreutil -L"$(CONDA_PREFIX)/lib/" -L"$(XILINX_XRT)/lib"
 INCLUDES = -I"$(XILINX_HLS)/include" -I"$(COMMON_DIR)/include" -I"$(XILINX_XRT)/include" -I"$(SRC_DIR)"
 DEFINES = -DTAPA_BUFFER_SUPPORT -DTAPA_BUFFER_EXPLICIT_RELEASE 
@@ -27,7 +27,7 @@ tapa:
   --enable-synth-util \
   --max-parallel-synth-jobs 24 \
   --floorplan-output constraint.tcl \
-  --clock-period 4.25 \
+  --clock-period $(CLOCK_PERIOD) \
   --enable-buffer-exprel \
   --min-area-limit 0.55 
 
@@ -38,7 +38,7 @@ tapa_fast:
   --top SpMV \
   --work-dir $(WORK_DIR)/spmv.$(platform).hw.xo.tapa \
   --enable-buffer-support \
-  --clock-period 4.25 \
+  --clock-period $(CLOCK_PERIOD) \
   --enable-buffer-exprel
 
 tapa_synth:
@@ -48,7 +48,7 @@ tapa_synth:
   --top SpMV \
   --work-dir $(WORK_DIR)/spmv.$(platform).hw.xo.tapa \
   --enable-buffer-support \
-  --clock-period 4.25 \
+  --clock-period $(CLOCK_PERIOD) \
   --enable-synth-util \
   --max-parallel-synth-jobs 24 \
   --enable-buffer-exprel

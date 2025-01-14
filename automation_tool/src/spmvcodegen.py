@@ -23,7 +23,7 @@ project_dir = current_dir.parents[1]
 logger = logging.getLogger(__name__)
 
 class SpMVCodeGen:
-    def __init__(self, spmvConfig, build_dir, fpga):
+    def __init__(self, spmvConfig, build_dir, fpga, high_freq=False):
         self.config = spmvConfig
         self.fpga = fpga
         self.pes_per_ch = self.config.ch_width // 64
@@ -35,6 +35,7 @@ class SpMVCodeGen:
         self.log2_num_pes = int(math.ceil(math.log2(self.num_pes)))
         self.build_dir = build_dir
         self.asset_dir = os.path.join(parent_dir, "assets")
+        self.high_freq = high_freq
 
     def generateAll(self):
         if self.fpga.series == 'Versal':
@@ -92,9 +93,11 @@ class SpMVCodeGen:
         if not os.path.exists(src_dir):
             os.makedirs(src_dir)
             
+        clock_period_ns = 2.5 if self.high_freq else 4.25 
         makefile_content = f"""
 platform = {self.fpga.platform}
 PROJECT_DIR = {project_dir}
+CLOCK_PERIOD = {clock_period_ns}
 WORK_DIR = $(shell pwd)
 
 include $(PROJECT_DIR)/common/common.mk
@@ -120,6 +123,8 @@ include $(PROJECT_DIR)/common/common.mk
                 file.write("#define BUILD_PRE_ACCUMULATOR\n")
             if self.config.row_dist_net:
                 file.write("#define BUILD_ROW_DIST_NETWORK\n")
+            if self.high_freq:
+                file.write("#define HIGH_FREQ_DESIGN\n")
             file.write(f"#define LOAD_GROUP_SIZE {self.load_group_size}\n\n")
             file.write(f"#define LOG_2_NUM_PES {self.log2_num_pes}\n\n")
 
@@ -149,7 +154,7 @@ include $(PROJECT_DIR)/common/common.mk
                 file.write(line)
             file.write("\n")
         
-        myCB = CrossBarGen(self.num_pes)
+        myCB = CrossBarGen(self.num_pes, self.high_freq)
         myCB.buildGraph(False)
 
         cb_streams_lines = self.generateCBstreams(myCB.depth_dict)
@@ -198,6 +203,7 @@ if __name__ == "__main__":
     parser.add_argument("--dense-overlay", action="store_true", help="Build SpMV kernel with support for GeMV")
     parser.add_argument("--pre-accumulator", action="store_true", help="Build SpMV kernel with Pre-Accumulator")
     parser.add_argument("--row-dist-net", action="store_true", help="Build SpMV kernel with Row Distribution Network")
+    parser.add_argument("--high-freq", action="store_true", help="Build Hardware for 400MHz Kernel Clock")
     # Add an argument with choices 'U280' and 'U50'
     parser.add_argument(
         '--device', 
@@ -228,7 +234,7 @@ if __name__ == "__main__":
     assert(mySpMV.num_ch_A%(2*mySpMV.num_ch_C) == 0)
     assert(mySpMV.ch_width == 256 or mySpMV.ch_width == 512)
 
-    myGen = SpMVCodeGen(mySpMV, build_dir, selected_device)
+    myGen = SpMVCodeGen(mySpMV, build_dir, selected_device, args.high_freq)
     myGen.generateAll()
 
     logger.info(f"Succesfully Generated Code at {build_dir}")

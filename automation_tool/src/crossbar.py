@@ -1,7 +1,7 @@
 import math
 
 class CrossBarGen:
-    def __init__(self, size):
+    def __init__(self, size, high_freq = False):
         self.graph_dict = {}
         self.b_no = 0 #keep track of numb of blocks
         self.n = size
@@ -11,6 +11,7 @@ class CrossBarGen:
         self.total_stream_depth = 0
         self.total_add_blocks = 0
         self.total_sw_blocks = 0
+        self.high_freq = high_freq
         
     def updateDepth(self, stream, start, level):
         if start:
@@ -25,7 +26,7 @@ class CrossBarGen:
             depth = (end - start) * 2
             for i in range(start, end):
                 if (i%2 == 1) and (i < 2*(math.floor(math.log2(self.n)))):
-                    depth += 6
+                    depth += 10 if self.high_freq else 6
             self.depth_dict[stream]['depth'] = depth
             self.total_stream_depth += depth
                 
