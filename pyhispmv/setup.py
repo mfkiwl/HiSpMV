@@ -19,6 +19,7 @@ ext_modules = [
             "src/pyhispmv_bindings.cpp",  # PyBind11 bindings
             "src/fpga_handle.cpp",        # FpgaHandle implementation
             "../common/src/spmv-helper.cpp",  # spmv-helper implementation
+            "../common/src/fpga-power.cpp" # fpga power monitor implementation
         ],
         include_dirs=[
             "include",                     # Headers for FpgaHandle
