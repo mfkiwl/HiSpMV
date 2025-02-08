@@ -1,7 +1,7 @@
 filename,config,cycle count
 analytics.mtx,PA-HI-SpMV-32-8-8,26278
 boyd2.mtx,PA-HI-SpMV-32-8-8,26312
-crankseg_2.mtx,PA-HI-SpMV-60-2-1,73016
+crankseg_2.mtx,PA-HI-SpMV-56-4-2,70545
 ford2.mtx,PA-HI-SpMV-32-8-8,7528
 language.mtx,PA-HI-SpMV-32-8-8,22516
 mouse_gene.mtx,PA-HI-SpMV-60-2-1,134219
@@ -11,11 +11,11 @@ soc-Pokec.mtx,PA-HI-SpMV-56-4-2,300335
 trans5.mtx,PA-HI-SpMV-32-8-8,9836
 ASIC_680k.mtx,PA-HI-SpMV-32-8-8,42901
 c-52.mtx,PA-HI-SpMV-32-8-8,2424
-crystk03.mtx,PA-HI-SpMV-56-2-2,11122
+crystk03.mtx,PA-HI-SpMV-56-4-2,10304
 hangGlider_3.mtx,PA-HI-SpMV-32-8-8,1058
 lowThrust_7.mtx,PA-HI-SpMV-40-8-4,2176
 nd6k.mtx,PA-HI-SpMV-60-2-1,32903
-PFlow_742.mtx,PA-HI-SpMV-56-2-2,279653
-Si41Ge41H72.mtx,PA-HI-SpMV-56-2-2,95478
-thread.mtx,PA-HI-SpMV-56-2-2,24462
+PFlow_742.mtx,PA-HI-SpMV-56-4-2,249055
+Si41Ge41H72.mtx,PA-HI-SpMV-56-4-2,88767
+thread.mtx,PA-HI-SpMV-56-4-2,23367
 TSOPF_RS_b2383.mtx,PA-HI-SpMV-60-2-1,75176

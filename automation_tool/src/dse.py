@@ -28,8 +28,8 @@ class DSE():
         # we can express NUM_CH_B and NUM_CH_C in terms of NUM_CH_A 
         # NUM_CH_B = NUM_CH_A*cols/nnz/2
         # NUM_CH_C = NUM_CH_A*rows/nnz/2
-        norm_cols = matrix.shape[1]/matrix.nnz/2
-        norm_rows = matrix.shape[0]/matrix.nnz/2
+        norm_cols = math.sqrt(matrix.shape[1]/matrix.nnz/2)
+        norm_rows = math.sqrt(matrix.shape[0]/matrix.nnz/2)
 
         # NUM_CH_A + NUM_CH_B + 2*NUM_CH_C <= HBM_CH (substitute and solve for NUM_CH_A)
         opt_ch_A = fpga.hbm.num_ch / (1 + norm_cols + 2*norm_rows)
@@ -42,7 +42,7 @@ class DSE():
         ch_c_limit = max(0, math.ceil(math.log2(opt_ch_C))) + 1
         # opt_ch_A = min(fpga.hbm.num_ch - opt_ch_B - 2*opt_ch_C, round(opt_ch_A))
 
-        logger.info(f"Search Space Limits: B=(0, {1 << ch_b_limit}], C=(0, {1 << ch_c_limit}]")
+        logger.info(f"Search Space Limits: B=[1, {1 << ch_b_limit}], C=[1, {1 << ch_c_limit}]")
         best_cycles = matrix.nnz + matrix.shape[0] + matrix.shape[1] # set to a number that is overly maximal
         best_config = None
         for c in [1 << i for i in range(ch_c_limit + 1)]:
@@ -86,21 +86,6 @@ class DSE():
                             else:
                                 a -= (2*c)
                                 logger.debug(f"A {a}")
-                        
-                        
-        #Try to see if we can get to increase C channels
-        max_c = (fpga.hbm.num_ch - best_config.num_ch_A - best_config.num_ch_B) // 2
-        best_c = best_config.num_ch_C
-        while(max_c > best_c and 2*max_c <= best_config.num_ch_A):
-            if (best_config.num_ch_A % (2*max_c) == 0):
-                config = best_config
-                config.num_ch_C = max_c
-                resource = ResourceEstimator.getDesignResource(config, fpga)
-                logger.debug(f"Resource: {resource}")
-                if DSE.allResourcesUnderLimit(resource, fpga):
-                    best_config.num_ch_C = max_c
-                    break
-            max_c = 1 << ((max_c-1).bit_length() - 1)
 
         logger.info(f"Best Config: {best_config}")
         cycles = CycleCountEstimator.getCC(best_config, matrix)
