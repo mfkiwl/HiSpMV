@@ -29,7 +29,7 @@ class DSE():
         # NUM_CH_B = NUM_CH_A*cols/nnz/2
         # NUM_CH_C = NUM_CH_A*rows/nnz/2
         norm_cols = math.sqrt(matrix.shape[1]/matrix.nnz/2)
-        norm_rows = math.sqrt(matrix.shape[0]/matrix.nnz/2)
+        norm_rows = math.sqrt(matrix.shape[0]/matrix.nnz/4)
 
         # NUM_CH_A + NUM_CH_B + 2*NUM_CH_C <= HBM_CH (substitute and solve for NUM_CH_A)
         opt_ch_A = fpga.hbm.num_ch / (1 + norm_cols + 2*norm_rows)
