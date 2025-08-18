@@ -184,8 +184,9 @@ class ResourceEstimator:
     
     @staticmethod
     def BUFF_B(config):
-        fp32perch = config.ch_width // 32
-        num_part = config.num_ch_B * fp32perch // 2
+        BRAM_WIDTH = 32
+        BRAM_PORTS = 2
+        num_part = config.num_ch_B * config.ch_width // BRAM_WIDTH // BRAM_PORTS
         return FPGAResource(bram=num_part, uram=0, dsp=0, lut=0, reg=0)
     
     @staticmethod
