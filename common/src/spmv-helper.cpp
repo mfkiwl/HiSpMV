@@ -957,8 +957,11 @@ double HiSpmvHandle::fpgaRun(const std::string& xclbin_path, const int id,
         std::cout << "Device BDF: " << bdf << "\n";
 
         std::cout << "Loading the xclbin: " << xclbin_path << std::endl;
+        auto start_load = std::chrono::steady_clock::now();
         auto uuid = dev.load_xclbin(xclbin_path);
-
+        auto end_load = std::chrono::steady_clock::now();
+        auto load_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_load - start_load).count();
+        std::cout << "Loading Time: " << load_time << " ms" << std::endl;
         std::cout << "Initializing kernel: SpMV\n";
         krnl = xrt::kernel(dev, uuid, "SpMV", xrt::kernel::cu_access_mode::exclusive);
         run = xrt::run(krnl);
@@ -969,7 +972,7 @@ double HiSpmvHandle::fpgaRun(const std::string& xclbin_path, const int id,
         std::cerr << "Exception : " << e.what() << "\n";
         std::exit(EXIT_FAILURE);
     }
-
+    
         // Set all the arguments
         int arg_num = 0;
 
