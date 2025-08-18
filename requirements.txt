@@ -5,3 +5,4 @@ torch
 numba
 scipy
 setuptools
+sparse_dot_mkl
