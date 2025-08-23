@@ -10,3 +10,4 @@ pyhispmv/build**
 pyhispmv/*.so
 pyhispmv/pyhispmv.egg-info
 apps/__pycache__
+cpu/main
