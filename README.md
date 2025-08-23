@@ -1,126 +1,263 @@
-# HiSpMV
-Sparse-matrix vector Multiplication is one of the fundamental kernels used in various applications like Scientific Computing, Machine Learning, Graph Analytics, and Circuit Simulation. HiSpMV is an open-source SpMV Accelerator for FPGA built using Vitis HLS and [PASTA](https://github.com/SFU-HiAccel/pasta) This repo consists of a **Code Generator** and two main designs **HiSpMV-16** and **HiSpMV-20** with host code and bitstream for *Alveo U280 board*. 
+# MAD-HiSpMV  
+**MAtrix Adaptive Design for Highly Imbalanced SpMV Accelerator (with GeMV Support) on HBM-based FPGAs**
 
-## Requirements:
-The following needs to be installed 
-1. Vitis 2021.2 (or newer version)
-2. TAPA + Autobridge from PASTA (see [here](https://github.com/SFU-HiAccel/pasta/blob/main/tapa/README.md#installation-process) for installation details)
-3. [Xilinx Runtime](https://github.com/Xilinx/XRT)
-4.  Alveo U280 HBM FPGA
-   
-## Set Environment:
-Source Vitis and Xilinx Runtime, replace VITIS_PATH and XRT_PATH with the actual path to your Vitis and Xilinx Runtime installation
-```
-source VITIS_PATH/2021.2/settings64.sh
-source XRT_PATH/xrt/setup.sh
-```
+MAD-HiSpMV is a HLS based accelerator designed for **Sparse Matrix–Vector Multiplication (SpMV)** on **HBM-equipped FPGAs**. It incorporates **matrix-adaptive designs** to efficiently handle highly imbalanced sparse workloads.  
 
-Add TAPA library to the PATH if installed in non-root, replace TAPA_PATH with the actual path to where you installed TAPA
-```
-export PATH="TAPA_PATH/bin":$PATH
-export CPATH="TAPA_PATH/include":$CPATH
-export LD_LIBRARY_PATH="TAPA_PATH/lib":$LD_LIBRARY_PATH
-```
+With the **dense overlay option**, MAD-HiSpMV also supports **General Matrix–Vector Multiplication (GeMV)**, making it suitable for **mixed sparse–dense workloads** such as hybrid HPC + DNN tasks.
 
-*NOTE:* Install and set up Gurobi (recommended if you are building hardware). See [here](https://tapa.readthedocs.io/en/release/installation.html#install-gurobi-recommended) for details.
+---
 
-## Run HiSpMV design on benchmark matrices:
-1. Download the benchmark matrices used in the paper by running the python script "get_tb_matrices.py"
+## Features
+- FPGA-accelerated **SpMV/GeMV** with matrix-adaptive design.
+- **Automation tool** to generate accelerator configurations based on input matrix properties.  
+- **Dense overlay mode** for GeMV support.  
+- Benchmarking support across **FPGA, CPU (Intel MKL), and GPU (NVIDIA cuSPARSE)** with power measurement.  
+- Includes prebuilt accelerator designs for **Xilinx Alveo U280** and **U50**.  
+
+---
+
+## Requirements
+
+### Software
+- [Vitis HLS 2023.2+](https://www.xilinx.com/products/design-tools/vitis.html)  
+- [Xilinx XRT](https://xilinx.github.io/XRT/)  
+- [PASTA + AutoBridge (sb-dev branch)](https://github.com/SFU-HiAccel/pasta-hybridbuffer/tree/sb-dev)  
+- [Miniconda](https://docs.conda.io/en/latest/miniconda.html)  
+
+> ⚠️ Note: The PASTA+AutoBridge repo is **private** until publication. Please request access if needed.
+
+---
+
+## ⚙️ Setup Instructions
+
+1. **Create and activate a Conda environment**  
+   Install [PASTA](https://github.com/SFU-HiAccel/pasta-hybridbuffer/tree/sb-dev) following its instructions.  
+
+2. **Clone this repository and set up environment**  
+   ```bash
+   load_vitis23
+   source miniconda3/bin/activate your_conda_env 
+   cd HiSpMV 
+   source setup
+   cd -
+   export CONDA_LOC=$(PWD)/miniconda3
+   ```
+   - `load_vitis23`: loads Vitis HLS & XRT path variables.  
+   - `setup`: sets required environment variables for MAD-HiSpMV.  
+
+3. **Install Python dependencies**  
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Download benchmarking matrices**  
+   ```bash
+   python get_tb_matrices.py
+   ```
+
+---
+
+## 📂 Repository Structure
+
 ```
-python3 get_tb_matrices.py
-```
-2. Switch to HiSpMV-16 or HiSpMV-20 directory
-```
-cd HiSpMV-16
-```
-or
-```
-cd HiSpMV-20
-```
-
-3. Compile and run the design for all the matrices
-```
-make spmv
-bash run_this.sh
-```
-
-## Use the code generator to build your hardware
-
-### Generate Source Code
-This script generates TAPA code for HiSpMV design.
-
-```
-python3 codegen/scripts/main.py <home_directory> <build_directory> [--num-ch-A <value>] [--num-ch-y <value>] [--config <path_to_config_file>] [--no-tree-adder] [--hybrid-buffer] [--matrices <path_to_matrices_directory>]
-```
-
-
-#### Arguments
-
-- `home_directory`: Path to the home directory, which is the CodeGen Folder.
-- `build_directory`: The path to where the generated source code should be placed, can be any location, new or existing. **WARNING:** Anything inside this directory will be erased.
-- `--num-ch-A <value>`: Number of HBM channels to read sparse matrix A (optional).
-- `--num-ch-y <value>`: Number of HBM channels to read dense vector y (optional).
-- `--config <path_to_config_file>`: The path to the configuration file containing available resources on the hardware, must specify bram, uram, dsp, lut, ff, and hbm (optional).
-- `--no-tree-adder`: Build hardware without reduction tree adder represented as Adder Chain Group in the paper(optional).
-- `--hybrid-buffer`: Build hardware with hybrid buffering capability (optional).
-- `--matrices <path_to_matrices_directory>`: Directory containing matrices in .mtx format (optional).
-
-
-#### Note
-Ensure to provide either `--num-ch-A <value>` or `--config <path_to_config_file>`, if you provide only a `--config` file, the code generator will automatically use the best value for `num-ch-A` based on the resources. If you specify only `--num-ch-A` or both, the code generator will use the value specified.
-
-#### Example
-In this example, HiSpMV design with 2 channels for streaming in sparse matrix A, 1 channel for output dense vector y, with hybrid buffer and without tree adder is specified.
-```
-python3 codegen/scripts/main.py codegen/ HiSpMV-2 --num-ch-A 2 --num-ch-y 1 --config codegen/u280_config.json --hybrid-buffer --no-tree-adder
-```
-The output will look something like this
-```
-Home Directory: codegen/
-Build Directory: HiSpMV-2
-Config File: codegen/u280_config.json
-Build with Tree Adder: False
-Build with Hybrid Buffer: True
-Num Channels for Dense Vector y: 1
-
-Number of Channels Specified, skipping computing optimum num_ch...
-
-Resource Estimation [2 Channels]
-  bram: 329 [16.32%]
-  DSP: 263 [2.91%]
-  uram: 48 [5.0%]
-  lut: 177641 [13.63%]
-  ff: 222828 [8.55%]
-  hbm: 5 [15.62%]
-
-Number of Channels: 2
-Total PEs: 16
+apps             # Python apps: run SpMV/GeMV + sample DNN model
+automation_tool  # Scripts to auto-generate accelerator configs (matrix-adaptive)
+builds           # Source code + xclbin for U280/U50 configs, usage reports, floorplans
+common           # Common host + kernel source code
+cpu              # CPU benchmarking (Intel MKL SpMV/GeMV + power measurement)
+gpu              # GPU benchmarking (cuSPARSE SpMV + power measurement)
+matrices         # Storage for benchmarking matrices (downloaded by script)
+pyhispmv         # pybind11 wrapper to invoke FPGA kernels via XRT
+get_tb_matrices.py  # Script to fetch test/benchmarking matrices
+requirements.txt # Python dependencies
+setup            # Environment setup script
+README.md        # Project documentation
 ```
 
-### Build Hardware
-Use the following commands to build the hardware from the generated source code
+---
 
-1. Change the current work directory to the path you specified as the build directory, in the previous example this was `HiSpMV-2`
-```
-cd HiSpMV-2
-```
-3. Compile host code and synthesize kernel using TAPA
-```
-make spmv
-make tapa
-```
-4. Generate Bitstream
-```
-make hw
-```
-5. Finally test the built hardware on benchmark matrices
-```
-bash run_this.sh
-```
- 
-## Publications
-The HiSpMV work is published in FPGA 2024.
-> Manoj B. Rajashekar, Xingyu Tian, and Zhenman Fang. 2024. HiSpMV: Hybrid Row Distribution and Vector Buffering for Imbalanced SpMV Acceleration on FPGAs. In Proceedings of the 2024 ACM/SIGDA International Symposium on Field Programmable Gate Arrays (FPGA ’24), March 3–5, 2024, Monterey, CA, USA. ACM, New York, NY, USA, 12 pages, https://doi.org/10.1145/3626202.3637557
+## 🚀 Example Usage
 
-The PASTA work has been published at FCCM 2023.
-> M. Khatti, X. Tian, Y. Chi, L. Guo, J. Cong and Z. Fang, "PASTA: Programming and Automation Support for Scalable Task-Parallel HLS Programs on Modern Multi-Die FPGAs," 2023 IEEE 31st Annual International Symposium on Field-Programmable Custom Computing Machines (FCCM), Marina Del Rey, CA, USA, 2023, pp. 12-22, doi: 10.1109/FCCM57271.2023.00011.
+### FPGA Benchmarks (Python Apps)
+
+1. **Build the `pyhispmv` package**  
+   ```bash
+   cd pyhispmv
+   python setup.py build_ext --inplace
+   cd ..
+   ```
+
+2. **Run SpMV/GeMV tests**  
+   - **General test (no arguments):**  
+     ```bash
+     cd apps
+     python general_test.py
+     ```
+
+   - **DNN model test (configurable):**  
+     ```bash
+     cd apps
+     python model_test.py \
+       --batch_size 1 \
+       --input_size 4096 \
+       --hidden_size_1 8192 \
+       --hidden_size_2 8192 \
+       --output_size 1024 \
+       --density1 0.1 \
+       --density2 0.25
+     ```
+
+   - **Note on device selection:**  
+     Both scripts require setting `device_id` (the FPGA index).  
+     To find available devices, run:  
+     ```bash
+     xbutil examine
+     ```
+     Update `device_id` in the scripts to match the U280 board.
+
+---
+
+### CPU Benchmarks (Intel MKL)
+```bash
+cd cpu
+make clean all
+./run_spmv.sh   # Run SpMV benchmarks
+./run_gemv.sh   # Run GeMV benchmarks
+```
+
+---
+
+### GPU Benchmarks (NVIDIA cuSPARSE)
+```bash
+cd gpu
+make clean all
+./run_all.sh    # Run all SpMV benchmarks
+```
+
+---
+
+### Automation Tool (Matrix-Adaptive Design Generation)
+
+The **automation tool** allows generating accelerator configurations either **automatically (matrix-adaptive)** or **manually (explicit parameters)**.
+
+---
+
+#### Option 1: Automatic Configuration (`main.py`)
+
+`automation_tool/src/main.py` analyzes the input matrix and automatically chooses optimal parameters such as HBM channel usage and optimizations.
+
+**Command:**
+```bash
+cd automation_tool/src
+python main.py <build_dir> --device {U50|U280|V80} [--matrices <file_or_dir>] [--dense-overlay]
+```
+
+**Arguments:**
+- `build_dir` (positional): Path to the build directory.  
+- `--device`: Target device (`U50`, `U280`, or `V80`) **[required]**.  
+- `--matrices`: Path to a matrix file or a directory containing matrices.  
+- `--dense-overlay`: Enable dense overlay mode (SpMV kernel with GeMV support).  
+
+⚠️ **Important Notes:**  
+- In **normal mode** (without `--dense-overlay`), the tool uses the input matrix to **tailor the accelerator design**.  
+- In **dense overlay mode**, the design is **not tailored** to the input sparse matrix, and the `--matrices` argument is **ignored**. The generated kernel supports both SpMV and GeMV for mixed workloads.
+
+**Examples:**
+- Generate SpMV design for U280 with matrix directory:  
+  ```bash
+  python main.py ../../builds --device U280 --matrices ../matrices/
+  ```
+- Generate SpMV+GeMV hybrid design for U50 (no matrices needed):  
+  ```bash
+  python main.py ../../builds --device U50 --dense-overlay
+  ```
+
+---
+
+#### Option 2: Manual Configuration (`spmvcodegen.py`)
+
+`automation_tool/src/rsc/spmvcodegen.py` provides **fine-grained control** over accelerator parameters instead of relying on automation.  
+
+**Command:**
+```bash
+cd automation_tool/src/
+python spmvcodegen.py <output_dir> --device {U50|U280} [options]
+```
+
+**Arguments:**
+- `output_dir`: Path to the output directory (**warning: will be erased if it exists**).  
+- `--device`: Target FPGA device (`U50` or `U280`) **[required]**.  
+- `--num-ch-A`: Number of HBM channels for sparse matrix A (default: 16).  
+- `--num-ch-x`: Number of HBM channels for input vector x (default: 1).  
+- `--num-ch-y`: Number of HBM channels for output vector y (default: 1).  
+- `--ch-width`: Width of HBM channels in bits (default: 512).  
+- `--urams-per-pe`: URAM banks per PE for output accumulation (default: 2).  
+- `--dense-overlay`: Enable dense overlay for GeMV support.  
+- `--pre-accumulator`: Enable pre-accumulator optimization.  
+- `--row-dist-net`: Enable row distribution network.  
+- `--high-freq`: Build hardware for 400 MHz kernel clock.  
+**Example (small dense-overlay design):**
+```bash
+python ../../automation_tool/src/spmvcodegen.py ../ --device U280 \
+  --num-ch-A 4 --num-ch-x 1 --num-ch-y 1 --urams-per-pe 1 --row-dist-net --dense-overlay
+```
+
+**Example log output:**
+```
+20250822:204011 [INFO]  Resource: FPGAResource(bram=128, uram=32, dsp=613, lut=134724, reg=135873)
+20250822:204011 [INFO]  Successfully Generated Code at ../Dense-HI-SpMV-4-1-1
+```
+
+---
+
+### Build and Test the Generated Design
+
+1. **Navigate to the generated design directory**  
+   The script automatically names the directory with configuration info:
+   ```bash
+   cd ../Dense-HI-SpMV-4-1-1
+   ```
+
+2. **Build host code**  
+   ```bash
+   make host
+   ```
+
+3. **Run C simulation (HLS source code)**  
+   - **Sparse matrix input (SpMV):**
+     ```bash
+     ./spmv-host ../../matrices/poli_large/poli_large.mtx
+     ```
+   - **Dense matrix input (dense overlay / GeMV):**
+     ```bash
+     ./spmv-host 512 512
+     ```
+     where `512 512` specifies rows and columns of the dense matrix.
+
+4. **Run hardware-software co-simulation**  
+   First, synthesize the RTL code:
+   ```bash
+   make tapa
+   ```
+   Then run co-simulation using the Vivado TAPA fast cosim:
+   ```bash
+   ./spmv-host 512 512 --bitstream="spmv.xilinx_u280_gen3x16_xdma_1_202211_1.hw.xo"
+   ```
+
+5. **Build final hardware bitstream**  
+   ```bash
+   make hw
+   ```
+
+6. **Run on actual FPGA hardware**  
+   ```bash
+   ./spmv-host ../../matrices/analytics/analytics.mtx \
+       --bitstream="vitis_run_hw/SpMV_xilinx_u280_gen3x16_xdma_1_202211_1.xclbin"
+   ```
+
+This workflow covers **dense-overlay design generation**, **C simulation**, **co-simulation**, and **execution on real FPGA hardware**.
+
+---
+
+## 📖 Citation
+If you use MAD-HiSpMV in your work, please cite our upcoming publication (to be added here after acceptance).  
