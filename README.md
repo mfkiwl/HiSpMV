@@ -1,24 +1,31 @@
 # MAD-HiSpMV  
 **MAtrix Adaptive Design for Highly Imbalanced SpMV Accelerator (with GeMV Support) on HBM-based FPGAs**
 
-MAD-HiSpMV is a HLS based accelerator designed for **Sparse Matrix–Vector Multiplication (SpMV)** on **HBM-equipped FPGAs**. It incorporates **matrix-adaptive designs** to efficiently handle highly imbalanced sparse workloads.  
+---
 
-With the **dense overlay option**, MAD-HiSpMV also supports **General Matrix–Vector Multiplication (GeMV)**, making it suitable for **mixed sparse–dense workloads** such as hybrid HPC + DNN tasks.
+## Overview of MAD-HiSpMV Architecture
+
+![MAD-HiSpMV Architecture](./arch_overview.png)
+
+MAD-HiSpMV is a high-performance FPGA accelerator for **Sparse Matrix–Vector Multiplication (SpMV)** with optional **dense overlay** for GeMV support. It builds on our previous HiSpMV work with several key enhancements:
+
+- **Scalable HBM support:** Multiple HBM channels are used to load input vectors and matrices efficiently.  
+- **Hybrid Row Distribution Network:** Routes PE outputs to dedicated **y\_Ax handlers** for accumulation, balancing workload.  
+- **Adder Chain Groups (ACG):** Optional pre-addition of multiplication results to avoid RAW dependency on output accumulation and reducing pipeline stalls.
+- **Dense Overlay Support:** Allows a single kernel to handle both SpMV and GeMV for mixed sparse-dense workloads.  
+
+**Data Flow Summary:**
+1. Sparse matrix `A` and input vector `x` are streamed from HBM channels to PEGs.  
+2. PEs multiply nonzero elements of `A` with the corresponding entries of `x`.  
+3. Results are routed through the **hybrid row distribution network** to the correct **y_Ax handlers**.  
+4. Optional **adder chains** pre-accumulate results before final accumulation.  
+5. Final output `y` is streamed back to HBM.  
+
 
 ---
 
-## Features
-- FPGA-accelerated **SpMV/GeMV** with matrix-adaptive design.
-- **Automation tool** to generate accelerator configurations based on input matrix properties.  
-- **Dense overlay mode** for GeMV support.  
-- Benchmarking support across **FPGA, CPU (Intel MKL), and GPU (NVIDIA cuSPARSE)** with power measurement.  
-- Includes prebuilt accelerator designs for **Xilinx Alveo U280** and **U50**.  
+## Software Requirements
 
----
-
-## Requirements
-
-### Software
 - [Vitis HLS 2023.2+](https://www.xilinx.com/products/design-tools/vitis.html)  
 - [Xilinx XRT](https://xilinx.github.io/XRT/)  
 - [PASTA + AutoBridge (sb-dev branch)](https://github.com/SFU-HiAccel/pasta-hybridbuffer/tree/sb-dev)  
