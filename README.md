@@ -192,7 +192,7 @@ python spmvcodegen.py <output_dir> --device {U50|U280} [options]
 ```
 
 **Arguments:**
-- `output_dir`: Path to the output directory (**warning: will be erased if it exists**).  
+- `output_dir`: Path to the output directory.  
 - `--device`: Target FPGA device (`U50` or `U280`) **[required]**.  
 - `--num-ch-A`: Number of HBM channels for sparse matrix A (default: 16).  
 - `--num-ch-x`: Number of HBM channels for input vector x (default: 1).  
@@ -202,7 +202,8 @@ python spmvcodegen.py <output_dir> --device {U50|U280} [options]
 - `--dense-overlay`: Enable dense overlay for GeMV support.  
 - `--pre-accumulator`: Enable pre-accumulator optimization.  
 - `--row-dist-net`: Enable row distribution network.  
-- `--high-freq`: Build hardware for 400 MHz kernel clock.  
+- `--high-freq`: Build hardware for 400 MHz kernel clock.
+
 **Example (small dense-overlay design):**
 ```bash
 python ../../automation_tool/src/spmvcodegen.py ../ --device U280 \
