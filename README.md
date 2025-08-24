@@ -251,7 +251,7 @@ python ../../automation_tool/src/spmvcodegen.py ../ --device U280 \
    ```bash
    ./spmv-host 512 512 --bitstream="spmv.xilinx_u280_gen3x16_xdma_1_202211_1.hw.xo"
    ```
-
+> Note: More details about the TAPA fast co-simulation for RTL simulation can be found here https://tapa.readthedocs.io/en/main/user/cosim.html 
 5. **Build final hardware bitstream**  
    ```bash
    make hw
